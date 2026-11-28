@@ -1245,6 +1245,29 @@ describe('ServersTab', () => {
     })
   })
 
+  it('asks for the service account again after the owner scope changes', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByRole('combobox', { name: 'User' })
+
+    const chooseScope = async (name: string) => {
+      fireEvent.click(screen.getAllByRole('combobox')[0])
+      fireEvent.click(await screen.findByRole('option', { name }))
+    }
+    await chooseScope('Service account')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    await chooseScope('Team shared')
+    await chooseScope('Service account')
+
+    // Team shared can change the team, so the account and its team are picked together again.
+    expect(screen.getByRole('combobox', { name: 'Service account' })).toHaveTextContent(
+      'Choose a service account',
+    )
+  })
+
   it('keeps servers a team admin does not manage read-only', async () => {
     const published = { ...server, can_manage: false }
     renderServersTab(null, [published, teamServer], teamAdminScope)

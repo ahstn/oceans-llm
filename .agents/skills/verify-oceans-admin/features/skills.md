@@ -23,6 +23,7 @@ Skills verification follows the real browser path from namespace selection and Z
 - Choose `Upload skill` to claim a namespace on first use and select a ZIP archive.
 - Open the skill-name link in the matching Owner row to view instructions, versions, files, and download controls. The detail heading shows `namespace/skill-name`.
 - Owners can use `Upload new version`, choose `Version`, and use `Set as default`.
+- Without `skills` in the gateway config, the page shows `Skills storage is off` with a config snippet and a `Set up skills storage` docs link, and no `Try again` button. An ordinary verification launch has no Skills storage, so it shows this state; the server still answers that page with HTTP 500 because the route error boundary renders it.
 
 ## Driving it with control-oceans-admin
 

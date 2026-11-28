@@ -32,18 +32,26 @@ export function useCredentialOwnerOptions(enabled: boolean) {
     void Promise.all([getUsers(), getServiceAccounts()])
       .then(([users, accounts]) => {
         if (cancelled) return
-        setOptions({
-          users: users.data.users
-            .filter((user) => user.status === 'active')
-            .map((user) => ({ id: user.id, label: `${user.name} (${user.email})` })),
-          teams: users.data.teams.map((team) => ({ id: team.id, label: team.name })),
-          serviceAccounts: accounts.data.service_accounts
-            .filter((account) => account.status === 'active')
-            .map((account) => ({
+        const activeUsers: CredentialOwnerOption[] = []
+        for (const user of users.data.users) {
+          if (user.status === 'active') {
+            activeUsers.push({ id: user.id, label: `${user.name} (${user.email})` })
+          }
+        }
+        const activeAccounts: CredentialServiceAccountOption[] = []
+        for (const account of accounts.data.service_accounts) {
+          if (account.status === 'active') {
+            activeAccounts.push({
               id: account.id,
               label: `${account.name} (${account.team_name})`,
               teamId: account.team_id,
-            })),
+            })
+          }
+        }
+        setOptions({
+          users: activeUsers,
+          teams: users.data.teams.map((team) => ({ id: team.id, label: team.name })),
+          serviceAccounts: activeAccounts,
         })
       })
       .catch(() => {

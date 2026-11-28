@@ -338,6 +338,10 @@ function CredentialKindFields({
             onFormChange({
               ...form,
               owner_scope_kind: value as CredentialBindingFormState['owner_scope_kind'],
+              // Team shared may have changed the team since an account was picked. Clearing the
+              // account means picking it again, which sets its own team.
+              owner_service_account_id:
+                value === 'service_account' ? '' : form.owner_service_account_id,
             })
           }
         >
