@@ -32,7 +32,8 @@ import type {
 } from '@/types/api'
 import { formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 
-import { StateBadge, humanize } from './session-state-badge'
+import { humanize } from './session-labels'
+import { StateBadge } from './session-state-badge'
 
 type AgentRequestAttempt = NonNullable<
   AgentSessionDetailView['report']
