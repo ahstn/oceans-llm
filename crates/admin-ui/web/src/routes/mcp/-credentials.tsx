@@ -1,10 +1,22 @@
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+
+import { AppIcon } from '@/components/icons/app-icon'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -16,7 +28,8 @@ import {
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { formatTimestamp } from '@/lib/format'
+import { formatCount, formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView } from '@/types/api'
 
 import type { CredentialOwnerOption, CredentialOwnerOptions } from './-credential-owners'
@@ -131,6 +144,10 @@ function CredentialOwnerField({
   )
 }
 
+// The directory can hold thousands of owners, so the picker mounts its list only while open and
+// shows at most this many matches; typing narrows the rest.
+const OWNER_RESULT_LIMIT = 50
+
 function OwnerPicker({
   id,
   label,
@@ -146,25 +163,85 @@ function OwnerPicker({
   options: CredentialOwnerOption[]
   onValueChange: (value: string) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const selected = options.find((option) => option.id === value)
+  const matches = matchingOwners(options, search)
+
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger id={id} aria-label={label}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem key={option.id} value={option.id}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next) setSearch('')
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-label={label}
+            aria-expanded={open}
+            className="w-full justify-between font-normal"
+          >
+            <span className={cn('truncate', !selected && 'text-muted-foreground')}>
+              {selected?.label ?? placeholder}
+            </span>
+            <AppIcon icon={ArrowDown01Icon} className="text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+          <Command shouldFilter={false}>
+            <CommandInput
+              aria-label={`Search ${label.toLowerCase()}`}
+              placeholder="Search by name or email"
+              value={search}
+              onValueChange={setSearch}
+            />
+            <CommandList>
+              <CommandEmpty>No matches.</CommandEmpty>
+              <CommandGroup>
+                {matches.shown.map((option) => (
+                  <CommandItem
+                    key={option.id}
+                    value={option.id}
+                    onSelect={() => {
+                      onValueChange(option.id)
+                      setOpen(false)
+                      setSearch('')
+                    }}
+                  >
+                    {option.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+            {matches.total > matches.shown.length ? (
+              <p className="text-muted-foreground border-t px-3 py-2 text-xs">
+                Showing {matches.shown.length} of {formatCount(matches.total)}. Type to narrow.
+              </p>
+            ) : null}
+          </Command>
+        </PopoverContent>
+      </Popover>
     </Field>
   )
+}
+
+function matchingOwners(options: CredentialOwnerOption[], search: string) {
+  const query = search.trim().toLowerCase()
+  const shown: CredentialOwnerOption[] = []
+  let total = 0
+  for (const option of options) {
+    if (query && !option.label.toLowerCase().includes(query)) continue
+    total += 1
+    if (shown.length < OWNER_RESULT_LIMIT) shown.push(option)
+  }
+  return { shown, total }
 }
 
 function OwnerIdInput({

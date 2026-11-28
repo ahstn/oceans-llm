@@ -1224,6 +1224,28 @@ describe('ServersTab', () => {
     }
   })
 
+  it('caps a large owner directory and narrows it by search', async () => {
+    const users = Array.from({ length: 120 }, (_, index) => ({
+      id: `user_${index}`,
+      label: `Person ${index} (person${index}@example.test)`,
+    }))
+    renderServersTab(null, [server], { ...credentialScope, users })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    fireEvent.click(await screen.findByRole('combobox', { name: 'User' }))
+
+    expect(await screen.findAllByRole('option')).toHaveLength(50)
+    expect(screen.getByText('Showing 50 of 120. Type to narrow.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('Search by name or email'), {
+      target: { value: 'person119@' },
+    })
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('option', { name: 'Person 119 (person119@example.test)' }))
+    expect(screen.getByRole('combobox', { name: 'User' })).toHaveTextContent('Person 119')
+  })
+
   it('fills the team from a picked service account', async () => {
     renderServersTab(null, [server], credentialScope)
 
