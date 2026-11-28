@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7fbf0743ec3e57::t_2452d4e4406398 1248-1270
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_7fbf0743ec3e57::t_3fb98a7be62077 26
+crates/admin-ui/web/src/routes/mcp/-credentials.tsx
+  s_7fbf0743ec3e57::t_200a0ca7d6df8a 341-344
+crates/admin-ui/web/e2e/skills-disabled.e2e.ts
+  s_7fbf0743ec3e57::t_53a04a15beb01f 8-12,16-19,22
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_7fbf0743ec3e57::t_f08c67c5313b72 37
+crates/admin-ui/web/src/routes/mcp/-credential-owners.ts
+  s_7fbf0743ec3e57::t_200a0ca7d6df8a 35-44,48-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96c00bb9f8d1c0fd1b2b1a81e5fea9318a3bc2be",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
