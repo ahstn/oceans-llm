@@ -1268,6 +1268,46 @@ describe('ServersTab', () => {
     )
   })
 
+  it('labels credential bindings and pins Revoke to the table edge', async () => {
+    getMcpCredentialBindingsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'binding_1',
+            server_id: 'server_1',
+            owner_scope_kind: 'service_account',
+            owner_scope_key: 'service_account:sa_ci',
+            owner_service_account_id: 'sa_ci',
+            owner_team_id: 'team_a',
+            material_kind: 'bearer_token',
+            storage_kind: 'encrypted_blob',
+            secret_ref: null,
+            expires_at: '2026-12-28T12:00:00Z',
+            last_used_at: null,
+            revoked_at: null,
+            granted_scopes: [],
+            created_at: '2026-11-28T12:00:00Z',
+            updated_at: '2026-11-28T12:00:00Z',
+          },
+        ],
+      },
+    })
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    const revoke = await screen.findByRole('button', { name: 'Revoke' })
+    const row = within(revoke.closest('tr') as HTMLElement)
+    expect(row.getByText('Active')).toHaveAttribute('data-variant', 'success')
+    expect(row.getByText('Service account')).toBeInTheDocument()
+    expect(row.getByText('Bearer token')).toBeInTheDocument()
+    expect(row.getByText('Encrypted secret')).toBeInTheDocument()
+    expect(row.getByText('28 Dec 2026, 12:00 UTC')).toBeInTheDocument()
+    expect(revoke.closest('td')).toHaveClass('sticky', 'right-0', 'shadow-sticky-edge-end')
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('sticky', 'right-0')
+  })
+
   it('keeps servers a team admin does not manage read-only', async () => {
     const published = { ...server, can_manage: false }
     renderServersTab(null, [published, teamServer], teamAdminScope)

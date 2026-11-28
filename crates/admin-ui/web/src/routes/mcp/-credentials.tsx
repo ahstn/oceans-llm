@@ -13,14 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatTimestamp } from '@/lib/format'
 import type { McpCredentialBindingView } from '@/types/api'
@@ -470,18 +464,19 @@ function CredentialBindingsTable({
   return (
     <div className="overflow-x-auto">
       <Table className="min-w-[72rem]">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Status</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Material</TableHead>
-            <TableHead>Storage</TableHead>
-            <TableHead>Secret ref</TableHead>
-            <TableHead>Expires</TableHead>
-            <TableHead>Last used</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
+        <AdminTableHeader>
+          <AdminTableHead>Status</AdminTableHead>
+          <AdminTableHead>Owner</AdminTableHead>
+          <AdminTableHead>Material</AdminTableHead>
+          <AdminTableHead>Storage</AdminTableHead>
+          <AdminTableHead>Secret ref</AdminTableHead>
+          <AdminTableHead>Expires</AdminTableHead>
+          <AdminTableHead>Last used</AdminTableHead>
+          {/* Pinned, so Revoke stays reachable while the wide table scrolls sideways. */}
+          <AdminTableHead className="bg-surface-muted shadow-sticky-edge-end sticky right-0 z-10 text-right">
+            Actions
+          </AdminTableHead>
+        </AdminTableHeader>
         <TableBody>
           {bindings.map((binding) => (
             <TableRow key={binding.id}>
@@ -516,7 +511,7 @@ function CredentialBindingsTable({
               <TableCell className="whitespace-nowrap">
                 {formatTimestamp(binding.last_used_at)}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="bg-popover shadow-sticky-edge-end sticky right-0 z-10 text-right">
                 <Button
                   type="button"
                   size="sm"
