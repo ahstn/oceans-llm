@@ -1,4 +1,4 @@
-import { sanitizeEntityTags } from '@/routes/identity/-entity-tag-utils'
+import { sanitizeEntityTags } from '@/lib/entity-tags'
 import { sanitizeCreateUserForm, withAuthMode } from '@/routes/identity/-user-form'
 import type { UserOption } from '@/routes/identity/-teams/user-multi-select-field'
 import type {

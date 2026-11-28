@@ -1,4 +1,4 @@
-import { sanitizeEntityTags } from '@/routes/identity/-entity-tag-utils'
+import { sanitizeEntityTags } from '@/lib/entity-tags'
 import type { CreateUserInput, IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
 
 type OidcProviders = IdentityUsersPayload['oidc_providers']

@@ -4,7 +4,9 @@ import { toast, type Action } from 'sonner'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { toCredentialUserOptions } from '@/routes/mcp/-credential-owners'
 import type { McpWorkspaceScope } from '@/routes/mcp/-scope'
+import type { UserView } from '@/types/live-api'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
 import { ServersTab } from '@/routes/mcp/-servers-tab'
 
@@ -13,7 +15,6 @@ const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
 const getMcpCredentialBindingsMock = vi.fn()
 const saveMcpCredentialBindingMock = vi.fn()
-const getUsersMock = vi.fn()
 const getServiceAccountsMock = vi.fn()
 const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
@@ -55,7 +56,6 @@ vi.mock('@/server/admin-data.functions', () => ({
   getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
   getServiceAccounts: (...args: unknown[]) => getServiceAccountsMock(...args),
-  getUsers: (...args: unknown[]) => getUsersMock(...args),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
     refreshExternalMcpServerDiscoveryMock(...args),
   removeMcpCredentialBinding: vi.fn(),
@@ -195,6 +195,19 @@ const teamAdminScope: McpWorkspaceScope = {
   readOnly: false,
 }
 
+// Users and teams reach the credentials form from the `/mcp` loader's directory.
+const credentialScope: McpWorkspaceScope = {
+  platformAdmin: true,
+  canPublish: true,
+  teamId: null,
+  teams: [{ id: 'team_a', name: 'Team A' }],
+  users: toCredentialUserOptions([
+    { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+    { id: 'user_old', name: 'Old User', email: 'old@example.test', status: 'disabled' },
+  ] as UserView[]),
+  readOnly: false,
+}
+
 function renderServersTab(
   initialSelectedServerId: string | null = null,
   servers: McpServerView[] = [server],
@@ -266,16 +279,6 @@ describe('ServersTab', () => {
     getMcpCredentialBindingsMock.mockResolvedValue({ data: { items: [] } })
     saveMcpCredentialBindingMock.mockReset()
     saveMcpCredentialBindingMock.mockResolvedValue({ data: {} })
-    getUsersMock.mockReset()
-    getUsersMock.mockResolvedValue({
-      data: {
-        users: [
-          { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
-          { id: 'user_old', name: 'Old User', email: 'old@example.test', status: 'disabled' },
-        ],
-        teams: [{ id: 'team_a', name: 'Team A' }],
-      },
-    })
     getServiceAccountsMock.mockReset()
     getServiceAccountsMock.mockResolvedValue({
       data: {
@@ -1186,7 +1189,7 @@ describe('ServersTab', () => {
   it('binds a credential to a named owner with a preset expiry', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-28T12:00:00Z') })
     try {
-      renderServersTab()
+      renderServersTab(null, [server], credentialScope)
 
       fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
       fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
@@ -1222,7 +1225,7 @@ describe('ServersTab', () => {
   })
 
   it('fills the team from a picked service account', async () => {
-    renderServersTab()
+    renderServersTab(null, [server], credentialScope)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
@@ -1246,7 +1249,7 @@ describe('ServersTab', () => {
   })
 
   it('asks for the service account again after the owner scope changes', async () => {
-    renderServersTab()
+    renderServersTab(null, [server], credentialScope)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])

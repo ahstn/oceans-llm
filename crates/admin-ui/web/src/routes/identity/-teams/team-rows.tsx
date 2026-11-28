@@ -27,8 +27,8 @@ import {
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatCount } from '@/lib/format'
-import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
-import { EntityTagChips } from '@/routes/identity/-entity-tags'
+import type { EntityTag } from '@/lib/entity-tags'
+import { EntityTagChips } from '@/components/shared/entity-tags'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { TeamManagementView, TeamMemberView } from '@/types/api'
 

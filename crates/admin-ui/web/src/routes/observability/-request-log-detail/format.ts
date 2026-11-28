@@ -7,7 +7,7 @@ import {
 } from '@/lib/format'
 import { callerPrimary, callerSecondary } from '@/lib/caller'
 import type { RequestLogView } from '@/types/api'
-import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
+import type { EntityTag } from '@/lib/entity-tags'
 
 export { callerPrimary, callerSecondary } from '@/lib/caller'
 
