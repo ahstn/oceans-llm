@@ -1,0 +1,22 @@
+crates/admin-ui/web/src/routes/batches/-components.tsx
+  s_7fbf0743ec3e57::t_8e018a425d39cc 295,365-369
+  s_7fbf0743ec3e57::t_612159afaacc1e 370-371
+crates/admin-ui/web/src/test/routes/batches-route.test.tsx
+  s_7fbf0743ec3e57::t_5d9eb20ce1cac1 234-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c501a8f65272010bdae76d3e2ee25e5a0a093ee9",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
