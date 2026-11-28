@@ -4,6 +4,7 @@ import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { EMPTY_VALUE } from '@/lib/format'
 import type { AgentSessionDetailView } from '@/types/api'
 import {
   getAgentSessionToolMetricAvailability,
@@ -51,7 +52,7 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="External session source hash"
-          value={detail.session.session_source_hash ?? 'Not available'}
+          value={detail.session.session_source_hash ?? EMPTY_VALUE}
         />
       </DiagnosticSection>
 
@@ -155,9 +156,7 @@ export function AgentSessionDiagnostics({
         />
         <DiagnosticRow
           label="Pricing policy versions"
-          value={
-            diagnostics?.token_and_cache.pricing_policy_versions.join(' · ') || 'Not available'
-          }
+          value={diagnostics?.token_and_cache.pricing_policy_versions.join(' · ') || EMPTY_VALUE}
         />
       </DiagnosticSection>
 
@@ -179,7 +178,7 @@ export function AgentSessionDiagnostics({
           value={
             diagnostics
               ? `${diagnostics.tools_and_changes.classified_tool_calls} identified of ${diagnostics.tools_and_changes.observed_tool_calls} observed`
-              : 'Not available'
+              : EMPTY_VALUE
           }
         />
         <DiagnosticRow
@@ -203,7 +202,7 @@ export function AgentSessionDiagnostics({
           value={
             diagnostics
               ? `${diagnostics.tools_and_changes.file_reads_suspected} read · ${diagnostics.tools_and_changes.file_searches_suspected} search · ${diagnostics.tools_and_changes.file_edits_suspected} edit · ${diagnostics.tools_and_changes.file_creates_suspected} create · ${diagnostics.tools_and_changes.file_overwrites_suspected} overwrite`
-              : 'Not available'
+              : EMPTY_VALUE
           }
         />
         <DiagnosticRow
@@ -333,15 +332,15 @@ function DiagnosticRow({ label, value }: { label: string; value: string }) {
 }
 
 function formatBasisPoints(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : `${(value / 100).toFixed(1)}%`
+  return value === null || value === undefined ? EMPTY_VALUE : `${(value / 100).toFixed(1)}%`
 }
 
 function formatTokenCount(value?: number | null) {
-  return value === null || value === undefined ? 'Not available' : tokenCountFormatter.format(value)
+  return value === null || value === undefined ? EMPTY_VALUE : tokenCountFormatter.format(value)
 }
 
 function formatBytes(value?: number | null) {
-  if (value === null || value === undefined) return 'Not available'
+  if (value === null || value === undefined) return EMPTY_VALUE
   if (value < 1_024) return `${value} B`
   return `${(value / 1_024).toFixed(1)} KiB`
 }
@@ -350,7 +349,7 @@ function formatScaledCost(
   value: number | null | undefined,
   formatCost: (value?: number | null) => string,
 ) {
-  return value === null || value === undefined ? 'Not available' : formatCost(value / 10_000)
+  return value === null || value === undefined ? EMPTY_VALUE : formatCost(value / 10_000)
 }
 
 function formatNullable(value: unknown, fallback = '—') {

@@ -109,7 +109,7 @@ export function PolicyDialog({
         if (!open && !pending) onClose()
       }}
     >
-      <DialogContent className="min-w-0 overflow-hidden">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{policy ? 'Edit rate limit' : 'New rate limit'}</DialogTitle>
           <DialogDescription>

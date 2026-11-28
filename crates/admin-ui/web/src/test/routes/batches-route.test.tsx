@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // A static import: `vi.mock` is hoisted above it, and loading the route here,
@@ -216,8 +216,32 @@ describe('BatchesPage', () => {
     expect(
       screen.getByText(/Activation and repeat use are the strongest signals/),
     ).toBeInTheDocument()
-    expect(screen.getByText('Request payload')).toBeInTheDocument()
     expect(screen.queryByText('req_retention')).not.toBeInTheDocument()
+
+    const sheet = screen.getByRole('dialog')
+    // The sheet widens past SheetContent's default sm:max-w-sm cap.
+    expect(sheet).toHaveClass('sm:max-w-3xl')
+    expect(sheet).not.toHaveClass('sm:max-w-sm')
+    expect(within(sheet).getAllByText('Completed')[0]).toHaveAttribute('data-slot', 'badge')
+
+    const payload = within(sheet).getByRole('button', { name: 'Request payload' })
+    expect(payload).toHaveAttribute('aria-expanded', 'false')
+    expect(sheet.querySelector('details')).toBeNull()
+    fireEvent.click(payload)
+    expect(payload).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('shows a result still waiting on the provider as pending, not failed', async () => {
+    getBatchResultPageMock.mockResolvedValue({
+      ...completedDetail,
+      items: [{ ...completedDetail.items[0], status: 'pending', response: null }],
+    })
+
+    render(<BatchesPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0])
+
+    const sheet = await screen.findByRole('dialog')
+    expect(await within(sheet).findByText('Pending')).toHaveAttribute('data-variant', 'warning')
   })
 
   it('loads later result pages from the gateway', async () => {

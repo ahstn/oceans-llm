@@ -95,7 +95,7 @@ export function TransferMemberDialog({
 
   return (
     <Dialog open={change.mode === 'transfer'} onOpenChange={(open) => !open && change.close()}>
-      <DialogContent className="w-[min(760px,calc(100vw-32px))]">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Transfer member</DialogTitle>
           <DialogDescription>

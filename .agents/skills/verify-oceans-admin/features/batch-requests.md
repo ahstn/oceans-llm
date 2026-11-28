@@ -29,7 +29,7 @@ Preconditions:
 - **Open.** Choose the `Batch Requests` link. The `Batch requests` heading, `Batch list` card, `2 batches in the current scope`, and `batch-desktop-table` are visible.
 - **Filter.** Open `batch-filter-status`, choose `Completed`, then `Apply filters`. The URL gains `status=completed` and the count reads `1 batch in the current scope`. Choose `Clear` to return to 2.
 - **Owner filters.** `batch-filter-user` and `batch-filter-service-account` list the seeded users and `Local CI Runner`. Applying `Local CI Runner` leaves only the queued row.
-- **Detail.** Choose `View` in the `Completed` row. The `Batch responses` sheet shows `Batch ID`, `Status` `Completed`, `Progress` `2 of 2`, and `Showing 1-2 of 2 responses.`, with two `Succeeded` results. Expand `Request payload` on one of them.
+- **Detail.** Choose `View` in the `Completed` row. The `Batch responses` sheet is 768 px wide on desktop. It shows `Batch ID`, `Status` as a `Completed` badge, `Progress` `2 of 2`, and `Showing 1-2 of 2 responses.`, with two green `Succeeded` result badges (a `pending` result is amber, other failures red). Choose the `Request payload` button on one of them to expand it.
 - **Cancel dialog.** Choose `Cancel` in the `Queued` row. When `Cancel this batch?` opens, choose `Keep batch`. The dialog closes and the row still reads `Queued`.
 - **API parity.** With the same session, fetch `GET /api/v1/batches?page=1&page_size=30` and `GET /api/v1/batches/{batch_id}/results?page=1&page_size=100`. `total`, `status`, `request_count`, and the result `custom_id` values must match the list and sheet. These responses have no `data` envelope.
 - **Proof.** Capture the list, the filtered count, the detail sheet, and the open cancel dialog. Record both batch IDs.

@@ -12,6 +12,8 @@ import type { GuardrailDecisionView } from '@/types/api'
 import {
   actionLabel,
   actionVariant,
+  dispositionLabel,
+  evaluatorLabel,
   formatLatency,
   formatDecisionTime,
   phaseLabel,
@@ -41,18 +43,22 @@ export function DecisionSheet({
               <SheetDescription>{formatDecisionTime(decision.occurred_at)}</SheetDescription>
             </SheetHeader>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 px-4 text-sm">
-              <Fact label="Reason">{decision.reason_code}</Fact>
+              <Fact label="Reason">
+                <Mono>{decision.reason_code}</Mono>
+              </Fact>
               <Fact label="Rule">{ruleLabel(decision)}</Fact>
-              <Fact label="Evaluator">{decision.evaluator}</Fact>
+              <Fact label="Evaluator">{evaluatorLabel(decision.evaluator)}</Fact>
               {decision.managed_service ? (
                 <Fact label="Managed service">{decision.managed_service}</Fact>
               ) : null}
-              <Fact label="Scope">{decision.effective_scope}</Fact>
+              <Fact label="Scope">
+                <Mono>{decision.effective_scope}</Mono>
+              </Fact>
               <Fact label="Latency">
                 <span className="tabular-nums">{formatLatency(decision.latency_micros)}</span>
               </Fact>
               {decision.failure_disposition ? (
-                <Fact label="On failure">{decision.failure_disposition}</Fact>
+                <Fact label="On failure">{dispositionLabel(decision.failure_disposition)}</Fact>
               ) : null}
               <Fact label="Transformed">{decision.transformed ? 'Yes' : 'No'}</Fact>
             </dl>

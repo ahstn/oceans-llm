@@ -46,7 +46,7 @@ export function AddMembersDialog({
 
   return (
     <Dialog open={addMembers.isOpen} onOpenChange={(open) => !open && addMembers.close()}>
-      <DialogContent className="w-[min(760px,calc(100vw-32px))]">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Add members</DialogTitle>
           <DialogDescription>

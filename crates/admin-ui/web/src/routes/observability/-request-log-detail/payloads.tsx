@@ -89,9 +89,9 @@ function PayloadPanel({
 }) {
   const formatted = useMemo(() => formatPayload(payload), [payload])
   const badge = truncated ? (
-    <Badge variant="warning">truncated</Badge>
+    <Badge variant="warning">Truncated</Badge>
   ) : (
-    <Badge variant="outline">full</Badge>
+    <Badge variant="outline">Full</Badge>
   )
 
   if (!formatted) {

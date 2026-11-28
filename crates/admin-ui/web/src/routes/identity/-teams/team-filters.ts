@@ -1,4 +1,4 @@
-import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
+import type { EntityTag } from '@/lib/entity-tags'
 import type { TeamManagementView } from '@/types/api'
 
 export type TeamStatusFilter = 'all' | 'active' | 'inactive'

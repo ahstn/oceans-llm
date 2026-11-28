@@ -111,7 +111,11 @@ describe('ModelInfoDialog routing', () => {
     expect(within(dialog).queryByText(/^via GitHub Copilot$/)).not.toBeInTheDocument()
     expect(within(dialog).getByText('Round robin')).toBeVisible()
     expect(within(dialog).getByText('1 hour idle')).toBeVisible()
-    expect(within(dialog).getAllByText('Enabled')).toHaveLength(2)
+    const enabled = within(dialog).getAllByText('Enabled')
+    expect(enabled).toHaveLength(2)
+    for (const badge of enabled) expect(badge).toHaveAttribute('data-variant', 'success')
+    // Fixed height from md up, so switching sections never resizes and re-centres the dialog.
+    expect(dialog).toHaveClass('md:h-[min(42rem,calc(100dvh-2rem))]')
   })
 
   it('keeps route and model identifiers behind separate details controls', () => {
@@ -486,5 +490,21 @@ describe('ModelInfoDialog service tiers', () => {
     expect(within(route).getByText('Fast (priority)')).toBeVisible()
     fireEvent.click(within(route).getByRole('button', { name: /Details for OpenRouter/ }))
     expect(within(route).getByText('Fast (priority) on every request')).toBeVisible()
+  })
+})
+
+describe('ModelInfoDialog overview', () => {
+  it('names every pricing catalog and shows a dash for an empty field', () => {
+    renderDialog(
+      { ...model, pricing_source: { kind: 'catalog', catalog_source: 'openrouter_api' } },
+      { initialSection: 'overview' },
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(within(dialog).getByText(/Source: OpenRouter catalog\./)).toBeVisible()
+    expect(within(dialog).queryByText(/openrouter_api/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('No aliases')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('No tags')).not.toBeInTheDocument()
+    expect(within(dialog).getAllByText('—').length).toBeGreaterThanOrEqual(2)
   })
 })

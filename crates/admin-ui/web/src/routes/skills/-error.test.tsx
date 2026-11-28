@@ -50,13 +50,19 @@ async function renderFailedSkillsRoute(loader: () => Promise<void>) {
 }
 
 describe('Skills route failures', () => {
-  it('keeps navigation visible when skills are not configured', async () => {
+  it('shows setup steps and keeps navigation when skills are not configured', async () => {
     await renderFailedSkillsRoute(async () => {
       throw new Error('skills are not configured')
     })
 
-    expect(await screen.findByRole('heading', { name: 'Skills are unavailable' })).toBeVisible()
-    expect(screen.getByRole('alert')).toHaveTextContent('skills are not configured')
+    // A setup state, not an error with a retry that cannot succeed until the config changes.
+    expect(await screen.findByText('Skills storage is off')).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Set up skills storage' })).toHaveAttribute(
+      'href',
+      'https://oceans-llm.com/extensions/skills/',
+    )
     expect(screen.getByRole('link', { name: 'Profile' })).toBeVisible()
     expect(screen.queryByText('The admin UI could not load')).not.toBeInTheDocument()
   })

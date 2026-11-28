@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { EntityTagBadges } from '@/routes/identity/-entity-tags'
+import { EntityTagBadges } from '@/components/shared/entity-tags'
 import { ProviderConfiguration } from '@/routes/identity/-users/provider-configuration'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import { useOnboardingReset } from '@/routes/identity/-users/use-onboarding-reset'

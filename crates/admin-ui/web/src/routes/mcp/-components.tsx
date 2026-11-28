@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import {
+  authLabel,
   describeDiscoveryResult,
   discoveryLabel,
   type DiscoveryRefreshResult,
@@ -53,31 +54,19 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { EMPTY_VALUE, formatCount, formatDuration, formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
   PLATFORM_OWNER_LABEL,
   ownerLabel,
   visibilityLabel,
 } from '@/components/mcp/server-ownership'
-import type {
-  AdminTeamOption,
-  McpCredentialBindingView,
-  McpServerView,
-  McpToolView,
-} from '@/types/api'
+import type { AdminTeamOption, McpServerView, McpToolView } from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
 import { ToolPolicyEditor } from './-tool-policy'
-import type { CredentialBindingFormState, ServerFormState, ServerVisibility } from './-server-forms'
+import type { ServerFormState, ServerVisibility } from './-server-forms'
 
 /** What the caller may set on a server's ownership in the server form. */
 export type ServerOwnershipOptions = {
@@ -302,7 +291,7 @@ export function ServerOverviewPanel({
       ) : null}
 
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="text-subtle-foreground text-xs font-medium tracking-wide uppercase">
+        <div className="text-muted-foreground tracking-label text-xs font-semibold uppercase">
           Endpoint
         </div>
         <div className="text-foreground min-w-0 truncate font-mono text-sm">
@@ -313,19 +302,19 @@ export function ServerOverviewPanel({
       <Separator />
 
       <dl className="grid text-sm sm:grid-cols-2">
-        <OverviewDetail label="Auth mode" value={formatOverviewValue(server.auth_mode)} />
-        <OverviewDetail label="Timeout" value={`${server.timeout_ms} ms`} />
-        <OverviewDetail label="Last discovery" value={server.last_discovery_at ?? 'never'} />
+        <OverviewDetail label="Auth mode" value={authLabel(server.auth_mode)} />
+        <OverviewDetail label="Timeout" value={formatDuration(server.timeout_ms)} />
+        <OverviewDetail label="Last discovery" value={formatTimestamp(server.last_discovery_at)} />
         <OverviewDetail
           label="Last success"
-          value={server.last_successful_discovery_at ?? 'never'}
+          value={formatTimestamp(server.last_successful_discovery_at)}
         />
-        <OverviewDetail label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
+        <OverviewDetail label="Discovered tools" value={formatCount(server.last_tool_count ?? 0)} />
         <OverviewDetail label="Owner" value={ownerLabel(server)} />
         <OverviewDetail label="Visibility" value={visibilityLabel(server.visibility)} />
-        <OverviewDetail label="Contact" value={server.owner_contact ?? 'none'} />
-        <OverviewDetail label="Created" value={server.created_at} />
-        <OverviewDetail label="Updated" value={server.updated_at} />
+        <OverviewDetail label="Contact" value={server.owner_contact ?? EMPTY_VALUE} />
+        <OverviewDetail label="Created" value={formatTimestamp(server.created_at)} />
+        <OverviewDetail label="Updated" value={formatTimestamp(server.updated_at)} />
       </dl>
 
       {server.can_manage ? null : (
@@ -444,10 +433,12 @@ function DiscoveryResultAlert({
 function OverviewDetail({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-border min-w-0 border-t py-3 sm:odd:pr-6 sm:even:pl-6">
-      <dt className="text-subtle-foreground text-xs font-medium tracking-wide uppercase">
+      <dt className="text-muted-foreground tracking-label text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd className="text-foreground mt-1 truncate text-sm font-medium">{value}</dd>
+      <dd className="text-foreground mt-1 truncate text-sm font-medium whitespace-nowrap tabular-nums">
+        {value}
+      </dd>
     </div>
   )
 }
@@ -832,275 +823,6 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   )
 }
 
-// Credential form and binding rows share owner, material, storage, and revocation invariants.
-// oxlint-disable-next-line eslint/max-lines-per-function
-export function CredentialBindingsPanel({
-  bindings,
-  form,
-  pending,
-  error,
-  teamScoped = false,
-  onFormChange,
-  onSubmit,
-  onRevoke,
-}: {
-  bindings: McpCredentialBindingView[]
-  form: CredentialBindingFormState
-  pending: boolean
-  error: string | null
-  /** Team admins set only team and service-account credentials. */
-  teamScoped?: boolean
-  onFormChange: (form: CredentialBindingFormState) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  onRevoke: (binding: McpCredentialBindingView) => void
-}) {
-  const activeBindings = bindings.filter((binding) => !binding.revoked_at)
-  return (
-    <div className="min-w-0 rounded-md border">
-      <div className="flex flex-col gap-1 border-b p-4">
-        <h3 className="font-medium">Credential bindings</h3>
-        <p className="text-subtle-foreground text-sm">
-          Principal-scoped upstream credentials for user passthrough and OAuth on-behalf-of modes.
-        </p>
-      </div>
-
-      {error ? (
-        <div className="border-destructive text-destructive m-4 rounded-md border p-3 text-sm">
-          {error}
-        </div>
-      ) : null}
-
-      <form className="grid gap-4 border-b p-4" onSubmit={onSubmit}>
-        <FieldGroup className="grid gap-3 md:grid-cols-3">
-          <Field>
-            <FieldLabel>Owner scope</FieldLabel>
-            <Select
-              value={form.owner_scope_kind}
-              onValueChange={(value) =>
-                onFormChange({
-                  ...form,
-                  owner_scope_kind: value as CredentialBindingFormState['owner_scope_kind'],
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {teamScoped ? null : <SelectItem value="user">User</SelectItem>}
-                  <SelectItem value="team">Team shared</SelectItem>
-                  <SelectItem value="service_account">Service account</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel>Material</FieldLabel>
-            <Select
-              value={form.material_kind}
-              onValueChange={(value) =>
-                onFormChange({
-                  ...form,
-                  material_kind: value as CredentialBindingFormState['material_kind'],
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="bearer_token">Bearer token</SelectItem>
-                  <SelectItem value="static_header">Static header</SelectItem>
-                  <SelectItem value="oauth_tokens">OAuth bearer</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel>Storage</FieldLabel>
-            <Select
-              value={form.storage_mode}
-              onValueChange={(value) =>
-                onFormChange({
-                  ...form,
-                  storage_mode: value as CredentialBindingFormState['storage_mode'],
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="secret">Encrypted secret</SelectItem>
-                  {/* A reference names a gateway-wide variable, so it is platform-only. */}
-                  {teamScoped ? null : <SelectItem value="secret_ref">Secret reference</SelectItem>}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-
-          {form.owner_scope_kind === 'user' ? (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-owner-user">User ID</FieldLabel>
-              <Input
-                id="mcp-credential-owner-user"
-                value={form.owner_user_id}
-                onChange={(event) => onFormChange({ ...form, owner_user_id: event.target.value })}
-                required
-              />
-            </Field>
-          ) : null}
-          {form.owner_scope_kind === 'team' || form.owner_scope_kind === 'service_account' ? (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-owner-team">Team ID</FieldLabel>
-              <Input
-                id="mcp-credential-owner-team"
-                value={form.owner_team_id}
-                onChange={(event) => onFormChange({ ...form, owner_team_id: event.target.value })}
-                required
-              />
-            </Field>
-          ) : null}
-          {form.owner_scope_kind === 'service_account' ? (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-owner-service-account">
-                Service account ID
-              </FieldLabel>
-              <Input
-                id="mcp-credential-owner-service-account"
-                value={form.owner_service_account_id}
-                onChange={(event) =>
-                  onFormChange({ ...form, owner_service_account_id: event.target.value })
-                }
-                required
-              />
-            </Field>
-          ) : null}
-          {form.material_kind === 'static_header' ? (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-header-name">Header name</FieldLabel>
-              <Input
-                id="mcp-credential-header-name"
-                value={form.header_name}
-                onChange={(event) => onFormChange({ ...form, header_name: event.target.value })}
-                placeholder="X-API-Key"
-                required
-              />
-            </Field>
-          ) : null}
-          {form.storage_mode === 'secret' ? (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-secret">Secret</FieldLabel>
-              <Input
-                id="mcp-credential-secret"
-                type="password"
-                value={form.secret}
-                onChange={(event) => onFormChange({ ...form, secret: event.target.value })}
-                required
-              />
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel htmlFor="mcp-credential-secret-ref">Secret reference</FieldLabel>
-              <Input
-                id="mcp-credential-secret-ref"
-                value={form.secret_ref}
-                onChange={(event) => onFormChange({ ...form, secret_ref: event.target.value })}
-                placeholder="env/OCEANS_MCP_CREDENTIAL_GITHUB"
-                required
-              />
-            </Field>
-          )}
-          <Field>
-            <FieldLabel htmlFor="mcp-credential-expires-at">Expires at</FieldLabel>
-            <Input
-              id="mcp-credential-expires-at"
-              type="datetime-local"
-              value={form.expires_at}
-              onChange={(event) => onFormChange({ ...form, expires_at: event.target.value })}
-            />
-          </Field>
-        </FieldGroup>
-        <div className="flex justify-end">
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Saving...' : 'Add binding'}
-          </Button>
-        </div>
-      </form>
-
-      {bindings.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>No credential bindings</EmptyTitle>
-            <EmptyDescription>
-              Execution will use gateway-managed auth or require a binding.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className="overflow-x-auto">
-          <Table className="min-w-[72rem]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Status</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Material</TableHead>
-                <TableHead>Storage</TableHead>
-                <TableHead>Secret ref</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Last used</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bindings.map((binding) => (
-                <TableRow key={binding.id}>
-                  <TableCell>{binding.revoked_at ? 'Revoked' : 'Active'}</TableCell>
-                  <TableCell>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span>{binding.owner_scope_kind}</span>
-                      <span className="text-subtle-foreground truncate font-mono text-xs">
-                        {binding.owner_scope_key}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {binding.material_kind}
-                    {binding.header_name ? ` (${binding.header_name})` : ''}
-                  </TableCell>
-                  <TableCell>{binding.storage_kind}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {binding.secret_ref ?? 'redacted'}
-                  </TableCell>
-                  <TableCell>{binding.expires_at ?? 'never'}</TableCell>
-                  <TableCell>{binding.last_used_at ?? 'never'}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onRevoke(binding)}
-                      disabled={pending || Boolean(binding.revoked_at)}
-                    >
-                      Revoke
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-      <div className="text-subtle-foreground border-t px-4 py-3 text-sm">
-        {activeBindings.length} active binding{activeBindings.length === 1 ? '' : 's'}
-      </div>
-    </div>
-  )
-}
-
 export function ServerFormDialog({
   mode,
   open,
@@ -1451,8 +1173,4 @@ export function DiscoveryStatusBadge({
 function discoveryVariant(status: string | null | undefined, attention: boolean) {
   if (attention) return 'destructive'
   return status ? 'secondary' : 'outline'
-}
-
-function formatOverviewValue(value: string) {
-  return value.replaceAll('_', ' ')
 }

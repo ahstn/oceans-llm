@@ -32,6 +32,9 @@ import type {
 } from '@/types/api'
 import { formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 
+import { humanize } from './session-labels'
+import { StateBadge } from './session-state-badge'
+
 type AgentRequestAttempt = NonNullable<
   AgentSessionDetailView['report']
 >['diagnostics']['reliability']['attempts'][number]
@@ -523,12 +526,6 @@ export function DetailSkeleton() {
   )
 }
 
-export function StateBadge({ value }: { value: string }) {
-  const normalized = value.toLowerCase()
-  const variant = normalized === 'failed' ? 'destructive' : 'outline'
-  return <Badge variant={variant}>{humanize(value)}</Badge>
-}
-
 // Requests in a session often land within the same minute, so their timestamps carry seconds.
 function formatRequestTime(value: string) {
   return formatTimestamp(value, { seconds: true })
@@ -593,10 +590,4 @@ function formatDataLimitation(value: string, detail: AgentSessionDetailView) {
 
 function formatLimitation(value: string) {
   return limitationLabels[value] ?? humanize(value)
-}
-
-function humanize(value?: string | null) {
-  return value
-    ? value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())
-    : 'Unknown'
 }

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { EMPTY_VALUE } from '@/lib/format'
 import { serviceTierLabel } from '@/lib/service-tier'
 import { cn } from '@/lib/utils'
 import { ModelBenchmarks } from '@/routes/-model-benchmarks'
@@ -89,7 +90,7 @@ export function ModelInfoDialog({
     <Dialog open={model !== null} onOpenChange={onOpenChange}>
       <DialogContent
         onCloseAutoFocus={onCloseAutoFocus}
-        className="flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        className="flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl md:h-[min(42rem,calc(100dvh-2rem))]"
       >
         {model ? (
           <>
@@ -105,7 +106,7 @@ export function ModelInfoDialog({
 
             <div
               data-testid="model-info-layout"
-              className="flex min-h-0 min-w-0 flex-col overflow-hidden border-t md:flex-row"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t md:flex-row"
             >
               <nav
                 aria-label="Model info sections"
@@ -199,7 +200,7 @@ function ModelInfoOverview({ model }: { model: ModelView }) {
                 ))}
               </ul>
             ) : (
-              'No aliases'
+              EMPTY_VALUE
             )
           }
         />
@@ -221,7 +222,7 @@ function ModelInfoOverview({ model }: { model: ModelView }) {
                 ))}
               </div>
             ) : (
-              'No tags'
+              EMPTY_VALUE
             )
           }
         />
@@ -277,10 +278,10 @@ function ModelInfoRouting({ model }: { model: ModelView }) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <dl className="min-w-0 divide-y pt-2">
-            <ModelInfoRow label="Model ID" value={model.model_id ?? '—'} mono />
+            <ModelInfoRow label="Model ID" value={model.model_id ?? EMPTY_VALUE} mono />
             <ModelInfoRow label="Resolved model" value={model.resolved_model_key} mono />
             {!model.routes ? (
-              <ModelInfoRow label="Provider key" value={model.provider_key ?? '—'} mono />
+              <ModelInfoRow label="Provider key" value={model.provider_key ?? EMPTY_VALUE} mono />
             ) : null}
           </dl>
         </CollapsibleContent>
@@ -343,7 +344,7 @@ function ProviderRoute({ route, position }: { route: ModelRouteView; position: n
           <span id={summaryId} className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="break-words">{label}</span>
-              <Badge variant={state === 'Enabled' ? 'secondary' : 'outline'}>{state}</Badge>
+              <Badge variant={routeStateVariant(state)}>{state}</Badge>
               {route.service_tier ? (
                 <Badge variant="outline">{serviceTierLabel(route.service_tier)}</Badge>
               ) : null}
@@ -378,6 +379,12 @@ function ProviderRoute({ route, position }: { route: ModelRouteView; position: n
       </CollapsibleContent>
     </Collapsible>
   )
+}
+
+function routeStateVariant(state: string) {
+  if (state === 'Enabled') return 'success'
+  if (state === 'Missing provider') return 'warning'
+  return 'secondary'
 }
 
 function ModelInfoEconomics({ model }: { model: ModelView }) {
@@ -472,6 +479,16 @@ function ModelInfoEconomics({ model }: { model: ModelView }) {
   )
 }
 
+// The gateway's pricing catalog sources: a live fetch, or the copy bundled with the release.
+const CATALOG_SOURCE_LABELS: Record<string, string> = {
+  models_dev_api: 'models.dev catalog',
+  vendored_models_dev: 'bundled models.dev catalog',
+  openrouter_api: 'OpenRouter catalog',
+  vendored_openrouter: 'bundled OpenRouter catalog',
+  litellm_github: 'LiteLLM catalog',
+  vendored_litellm: 'bundled LiteLLM catalog',
+}
+
 function pricingSourceLabel(model: ModelView) {
   const source = model.pricing_source
   switch (source?.kind) {
@@ -480,12 +497,8 @@ function pricingSourceLabel(model: ModelView) {
     case 'mixed':
       return 'Source: mixed pricing sources.'
     case 'catalog':
-      if (source.catalog_source === 'models_dev_api') return 'Source: models.dev catalog.'
-      if (source.catalog_source === 'vendored_models_dev') {
-        return 'Source: bundled models.dev catalog.'
-      }
-      return source.catalog_source
-        ? `Source: ${source.catalog_source}.`
+      return source.catalog_source && CATALOG_SOURCE_LABELS[source.catalog_source]
+        ? `Source: ${CATALOG_SOURCE_LABELS[source.catalog_source]}.`
         : 'Source: pricing catalog.'
     default:
       return 'Pricing source unavailable.'

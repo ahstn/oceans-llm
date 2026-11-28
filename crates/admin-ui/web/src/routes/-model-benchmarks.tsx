@@ -1,9 +1,9 @@
-import { formatDistanceToNowStrict } from 'date-fns'
 import { BadgeInfoIcon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { formatUtcDate } from '@/lib/format'
 import type { ModelView } from '@/types/api'
 
 const SCORE_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
@@ -96,7 +96,7 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
             <dd className="text-subtle-foreground flex min-w-0 flex-col gap-1">
               <span className="text-foreground font-medium">{formatBenchmarkScore(score)}</span>
               <span className="text-xs">
-                {matchKindLabel(score.match_kind)} · Updated {formatDataAge(score.updated_at)}
+                {matchKindLabel(score.match_kind)} · Updated {formatUtcDate(score.updated_at)}
               </span>
               <a
                 className="max-w-full text-xs break-words underline underline-offset-4"
@@ -119,12 +119,4 @@ export function ModelBenchmarks({ model }: { model: ModelView }) {
 
 function matchKindLabel(matchKind: BenchmarkScore['match_kind']) {
   return matchKind === 'explicit' ? 'Bound in config' : 'Matched from upstream model'
-}
-
-function formatDataAge(timestamp: string) {
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.getTime())) {
-    return 'at an unknown time'
-  }
-  return formatDistanceToNowStrict(date, { addSuffix: true })
 }

@@ -683,7 +683,7 @@ describe('AgentSessionsPage', () => {
       name: 'Open request req_1 in request logs',
     })
     expect(requestLink).toHaveAttribute('href', '/observability/request-logs?request_id=req_1')
-    expect(within(requestLink).getByText('Succeeded')).toBeInTheDocument()
+    expect(within(requestLink).getByText('Succeeded')).toHaveAttribute('data-variant', 'success')
     expect(within(requestLink).getByText('High confidence')).toBeInTheDocument()
     expect(within(requestLink).getByText('42.0 s')).toBeInTheDocument()
     expect(within(requestLink).getByText('2 attempts')).toBeInTheDocument()

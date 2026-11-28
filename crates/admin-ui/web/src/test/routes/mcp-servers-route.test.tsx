@@ -12,6 +12,9 @@ const navigateMock = vi.fn()
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
 const getMcpCredentialBindingsMock = vi.fn()
+const saveMcpCredentialBindingMock = vi.fn()
+const getUsersMock = vi.fn()
+const getServiceAccountsMock = vi.fn()
 const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
@@ -51,10 +54,12 @@ vi.mock('@/server/admin-data.functions', () => ({
   enableExternalMcpServer: (...args: unknown[]) => enableExternalMcpServerMock(...args),
   getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
+  getServiceAccounts: (...args: unknown[]) => getServiceAccountsMock(...args),
+  getUsers: (...args: unknown[]) => getUsersMock(...args),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
     refreshExternalMcpServerDiscoveryMock(...args),
   removeMcpCredentialBinding: vi.fn(),
-  saveMcpCredentialBinding: vi.fn(),
+  saveMcpCredentialBinding: (...args: unknown[]) => saveMcpCredentialBindingMock(...args),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
   transferExternalMcpServerOwnership: (...args: unknown[]) =>
     transferExternalMcpServerOwnershipMock(...args),
@@ -190,6 +195,18 @@ const teamAdminScope: McpWorkspaceScope = {
   readOnly: false,
 }
 
+// The scope Select returns focus to its trigger as it closes, which dismisses a popover opened in
+// the same tick. Wait for its list to go, then confirm the picked owner shows on the trigger.
+async function pickOwner(picker: string, option: string) {
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('combobox', { name: picker })).toBeEnabled())
+  fireEvent.click(screen.getByRole('combobox', { name: picker }))
+  fireEvent.click(await screen.findByRole('option', { name: option }))
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: picker })).toHaveTextContent(option),
+  )
+}
+
 function renderServersTab(
   initialSelectedServerId: string | null = null,
   servers: McpServerView[] = [server],
@@ -259,6 +276,34 @@ describe('ServersTab', () => {
 
     getMcpServerToolsMock.mockResolvedValue({ data: { items: [tool] } })
     getMcpCredentialBindingsMock.mockResolvedValue({ data: { items: [] } })
+    saveMcpCredentialBindingMock.mockReset()
+    saveMcpCredentialBindingMock.mockResolvedValue({ data: {} })
+    getUsersMock.mockReset()
+    getUsersMock.mockResolvedValue({
+      data: {
+        users: [
+          { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+          { id: 'user_old', name: 'Old User', email: 'old@example.test', status: 'disabled' },
+        ],
+        teams: [{ id: 'team_a', name: 'Team A' }],
+      },
+    })
+    getServiceAccountsMock.mockReset()
+    getServiceAccountsMock.mockResolvedValue({
+      data: {
+        service_accounts: [
+          {
+            id: 'sa_ci',
+            name: 'CI bot',
+            key: 'ci-bot',
+            status: 'active',
+            team_id: 'team_a',
+            team_name: 'Team A',
+          },
+        ],
+        teams: [],
+      },
+    })
     addMcpServerMock.mockResolvedValue({ data: { server } })
     saveMcpServerMock.mockResolvedValue({ data: { server } })
     disableExternalMcpServerMock.mockResolvedValue({
@@ -1134,6 +1179,242 @@ describe('ServersTab', () => {
     await waitFor(() => expect(registry.queryByText('GitHub')).not.toBeInTheDocument())
     expect(registry.getByText('Docs')).toBeInTheDocument()
     expect(screen.getByText('Showing 1 of 2 servers')).toBeInTheDocument()
+  })
+
+  it('formats the overview values instead of printing raw fields', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+
+    const detail = within(await screen.findByTestId('mcp-server-detail'))
+    expect(detail.getByText('Gateway bearer token')).toBeInTheDocument()
+    expect(detail.getByText('30.0 s')).toBeInTheDocument()
+    expect(detail.getAllByText('27 May 2026, 09:00 UTC')).toHaveLength(3)
+    expect(detail.getByText('27 May 2026, 08:00 UTC')).toBeInTheDocument()
+    expect(detail.queryByText(/2026-05-27T/)).not.toBeInTheDocument()
+    expect(detail.queryByText(/ms$/)).not.toBeInTheDocument()
+  })
+
+  it('binds a credential to a named owner with a preset expiry', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-28T12:00:00Z') })
+    try {
+      renderServersTab()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+      await screen.findAllByRole('button', { name: 'Credentials' })
+      // The directory loads when Credentials opens, not with the page or the dialog.
+      expect(getUsersMock).not.toHaveBeenCalled()
+      fireEvent.click(screen.getAllByRole('button', { name: 'Credentials' })[0])
+
+      const user = await screen.findByRole('combobox', { name: 'User' })
+      await waitFor(() => expect(user).toBeEnabled())
+      expect(getUsersMock).toHaveBeenCalledTimes(1)
+      // Each owner list loads only for its scope, so a user binding never reads service accounts.
+      expect(getServiceAccountsMock).not.toHaveBeenCalled()
+      expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
+      expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
+
+      fireEvent.click(user)
+      expect(screen.queryByRole('option', { name: /Old User/ })).not.toBeInTheDocument()
+      fireEvent.click(
+        await screen.findByRole('option', { name: 'Ada Lovelace (ada@example.test)' }),
+      )
+
+      expect(
+        screen.getByText('The credential stays valid until it is revoked.'),
+      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('radio', { name: '30 days' }))
+      expect(screen.getByText('Expires 28 Dec 2026, 12:00 UTC.')).toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('Secret'), { target: { value: 'token-1' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add binding' }))
+
+      await waitFor(() => expect(saveMcpCredentialBindingMock).toHaveBeenCalledTimes(1))
+      expect(saveMcpCredentialBindingMock.mock.calls[0][0].data).toMatchObject({
+        owner_scope_kind: 'user',
+        owner_user_id: 'user_ada',
+        expires_at: '2026-12-28T12:00:00.000Z',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the owner picker waiting while the directory loads', async () => {
+    let resolveUsers: (value: unknown) => void = () => {}
+    getUsersMock.mockReturnValue(new Promise((resolve) => (resolveUsers = resolve)))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    // No typed ID while the read is pending, so nothing outside the directory can be entered.
+    const user = await screen.findByRole('combobox', { name: 'User' })
+    expect(user).toBeDisabled()
+    expect(user).toHaveTextContent('Loading…')
+    expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+
+    await act(async () => {
+      resolveUsers({
+        data: {
+          users: [
+            { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+          ],
+          teams: [],
+        },
+      })
+    })
+    expect(screen.getByRole('combobox', { name: 'User' })).toBeEnabled()
+  })
+
+  it('falls back to a typed user ID when the directory read fails', async () => {
+    getUsersMock.mockRejectedValue(new Error('directory unavailable'))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    expect(await screen.findByLabelText('User ID')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'User' })).not.toBeInTheDocument()
+  })
+
+  it('needs both typed IDs for a service account when the directory read fails', async () => {
+    getUsersMock.mockRejectedValue(new Error('directory unavailable'))
+    getServiceAccountsMock.mockRejectedValue(new Error('directory unavailable'))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByLabelText('User ID')
+    fireEvent.click(screen.getAllByRole('combobox')[0])
+    fireEvent.click(await screen.findByRole('option', { name: 'Service account' }))
+
+    const accountId = await screen.findByLabelText('Service account ID')
+    fireEvent.change(accountId, { target: { value: 'sa_ci' } })
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Team ID'), { target: { value: 'team_a' } })
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeEnabled()
+  })
+
+  it('caps a large owner directory and narrows it by search', async () => {
+    getUsersMock.mockResolvedValue({
+      data: {
+        users: Array.from({ length: 120 }, (_, index) => ({
+          id: `user_${index}`,
+          name: `Person ${index}`,
+          email: `person${index}@example.test`,
+          status: 'active',
+        })),
+        teams: [],
+      },
+    })
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    const user = await screen.findByRole('combobox', { name: 'User' })
+    await waitFor(() => expect(user).toBeEnabled())
+    fireEvent.click(user)
+
+    expect(await screen.findAllByRole('option')).toHaveLength(50)
+    expect(screen.getByText('Showing 50 of 120. Type to narrow.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('Search by name or email'), {
+      target: { value: 'person119@' },
+    })
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('option', { name: 'Person 119 (person119@example.test)' }))
+    expect(screen.getByRole('combobox', { name: 'User' })).toHaveTextContent('Person 119')
+  })
+
+  it('fills the team from a picked service account', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByRole('combobox', { name: 'User' })
+
+    const [scopeSelect] = screen.getAllByRole('combobox')
+    fireEvent.click(scopeSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Service account' }))
+    await pickOwner('Service account', 'CI bot (Team A)')
+    fireEvent.change(screen.getByLabelText('Secret'), { target: { value: 'token-2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add binding' }))
+
+    await waitFor(() => expect(saveMcpCredentialBindingMock).toHaveBeenCalledTimes(1))
+    expect(saveMcpCredentialBindingMock.mock.calls[0][0].data).toMatchObject({
+      owner_scope_kind: 'service_account',
+      owner_service_account_id: 'sa_ci',
+      owner_team_id: 'team_a',
+      expires_at: null,
+    })
+  })
+
+  it('asks for the service account again after the owner scope changes', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByRole('combobox', { name: 'User' })
+
+    const chooseScope = async (name: string) => {
+      fireEvent.click(screen.getAllByRole('combobox')[0])
+      fireEvent.click(await screen.findByRole('option', { name }))
+    }
+    await chooseScope('Service account')
+    await pickOwner('Service account', 'CI bot (Team A)')
+    await chooseScope('Team shared')
+    await chooseScope('Service account')
+
+    // Team shared can change the team, so the account and its team are picked together again.
+    expect(screen.getByRole('combobox', { name: 'Service account' })).toHaveTextContent(
+      'Choose a service account',
+    )
+    // The pickers can't be `required`, so Add binding waits for the account.
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+    await pickOwner('Service account', 'CI bot (Team A)')
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeEnabled()
+  })
+
+  it('labels credential bindings and pins Revoke to the table edge', async () => {
+    getMcpCredentialBindingsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'binding_1',
+            server_id: 'server_1',
+            owner_scope_kind: 'service_account',
+            owner_scope_key: 'service_account:sa_ci',
+            owner_service_account_id: 'sa_ci',
+            owner_team_id: 'team_a',
+            material_kind: 'bearer_token',
+            storage_kind: 'encrypted_blob',
+            secret_ref: null,
+            expires_at: '2026-12-28T12:00:00Z',
+            last_used_at: null,
+            revoked_at: null,
+            granted_scopes: [],
+            created_at: '2026-11-28T12:00:00Z',
+            updated_at: '2026-11-28T12:00:00Z',
+          },
+        ],
+      },
+    })
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    const revoke = await screen.findByRole('button', { name: 'Revoke' })
+    const row = within(revoke.closest('tr') as HTMLElement)
+    expect(row.getByText('Active')).toHaveAttribute('data-variant', 'success')
+    expect(row.getByText('Service account')).toBeInTheDocument()
+    expect(row.getByText('Bearer token')).toBeInTheDocument()
+    expect(row.getByText('Encrypted secret')).toBeInTheDocument()
+    expect(row.getByText('28 Dec 2026, 12:00 UTC')).toBeInTheDocument()
+    expect(revoke.closest('td')).toHaveClass('sticky', 'right-0', 'shadow-sticky-edge-end')
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('sticky', 'right-0')
   })
 
   it('keeps servers a team admin does not manage read-only', async () => {
