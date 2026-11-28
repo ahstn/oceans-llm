@@ -32,7 +32,7 @@ import { formatCount, formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView } from '@/types/api'
 
-import type { CredentialOwnerOption, CredentialOwnerOptions } from './-credential-owners'
+import type { CredentialOwnerOption, CredentialOwnerOptions, OwnerList } from './-credential-owners'
 import {
   CREDENTIAL_EXPIRY_OPTIONS,
   credentialExpiresAt,
@@ -57,8 +57,8 @@ const CREDENTIAL_STORAGE_LABELS: Record<string, string> = {
   secret_ref: 'Secret reference',
 }
 
-// Platform admins pick owners by name once that owner's list loads; team admins, and anyone whose
-// directory read failed, type the ID instead.
+// Platform admins pick owners by name; the picker waits while that owner's list loads. Team
+// admins, and anyone whose directory read failed, type the ID instead.
 function CredentialOwnerField({
   form,
   owners,
@@ -69,7 +69,7 @@ function CredentialOwnerField({
   onFormChange: (form: CredentialBindingFormState) => void
 }) {
   if (form.owner_scope_kind === 'user') {
-    return owners?.users ? (
+    return owners && owners.users !== 'failed' ? (
       <OwnerPicker
         id="mcp-credential-owner-user"
         label="User"
@@ -88,7 +88,7 @@ function CredentialOwnerField({
     )
   }
   if (form.owner_scope_kind === 'team') {
-    return owners?.teams ? (
+    return owners && owners.teams !== 'failed' ? (
       <OwnerPicker
         id="mcp-credential-owner-team"
         label="Team"
@@ -107,7 +107,7 @@ function CredentialOwnerField({
     )
   }
   const serviceAccounts = owners?.serviceAccounts
-  if (serviceAccounts) {
+  if (serviceAccounts && serviceAccounts !== 'failed') {
     // A service account belongs to one team, so picking it fills the team too.
     return (
       <OwnerPicker
@@ -121,7 +121,9 @@ function CredentialOwnerField({
             ...form,
             owner_service_account_id: value,
             owner_team_id:
-              serviceAccounts.find((account) => account.id === value)?.teamId ?? form.owner_team_id,
+              (Array.isArray(serviceAccounts)
+                ? serviceAccounts.find((account) => account.id === value)?.teamId
+                : undefined) ?? form.owner_team_id,
           })
         }
       />
@@ -161,11 +163,13 @@ function OwnerPicker({
   label: string
   placeholder: string
   value: string
-  options: CredentialOwnerOption[]
+  options: OwnerList<CredentialOwnerOption>
   onValueChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const selected = options.find((option) => option.id === value)
+  // Until the list loads the picker can't open, so no owner can be set from outside the list.
+  const loaded = Array.isArray(options) ? options : null
+  const selected = loaded?.find((option) => option.id === value)
 
   return (
     <Field>
@@ -179,10 +183,11 @@ function OwnerPicker({
             role="combobox"
             aria-label={label}
             aria-expanded={open}
+            disabled={!loaded}
             className="w-full justify-between font-normal"
           >
             <span className={cn('truncate', !selected && 'text-muted-foreground')}>
-              {selected?.label ?? placeholder}
+              {selected?.label ?? (loaded ? placeholder : 'Loading…')}
             </span>
             <AppIcon icon={ArrowDown01Icon} className="text-muted-foreground" />
           </Button>
@@ -190,7 +195,7 @@ function OwnerPicker({
         <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
           <OwnerSearchList
             label={label}
-            options={options}
+            options={loaded ?? []}
             onSelect={(ownerId) => {
               onValueChange(ownerId)
               setOpen(false)

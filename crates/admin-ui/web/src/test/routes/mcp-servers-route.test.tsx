@@ -199,6 +199,7 @@ const teamAdminScope: McpWorkspaceScope = {
 // the same tick. Wait for its list to go, then confirm the picked owner shows on the trigger.
 async function pickOwner(picker: string, option: string) {
   await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('combobox', { name: picker })).toBeEnabled())
   fireEvent.click(screen.getByRole('combobox', { name: picker }))
   fireEvent.click(await screen.findByRole('option', { name: option }))
   await waitFor(() =>
@@ -1206,6 +1207,7 @@ describe('ServersTab', () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'Credentials' })[0])
 
       const user = await screen.findByRole('combobox', { name: 'User' })
+      await waitFor(() => expect(user).toBeEnabled())
       expect(getUsersMock).toHaveBeenCalledTimes(1)
       // Each owner list loads only for its scope, so a user binding never reads service accounts.
       expect(getServiceAccountsMock).not.toHaveBeenCalled()
@@ -1238,6 +1240,45 @@ describe('ServersTab', () => {
     }
   })
 
+  it('keeps the owner picker waiting while the directory loads', async () => {
+    let resolveUsers: (value: unknown) => void = () => {}
+    getUsersMock.mockReturnValue(new Promise((resolve) => (resolveUsers = resolve)))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    // No typed ID while the read is pending, so nothing outside the directory can be entered.
+    const user = await screen.findByRole('combobox', { name: 'User' })
+    expect(user).toBeDisabled()
+    expect(user).toHaveTextContent('Loading…')
+    expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+
+    await act(async () => {
+      resolveUsers({
+        data: {
+          users: [
+            { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+          ],
+          teams: [],
+        },
+      })
+    })
+    expect(screen.getByRole('combobox', { name: 'User' })).toBeEnabled()
+  })
+
+  it('falls back to a typed user ID when the directory read fails', async () => {
+    getUsersMock.mockRejectedValue(new Error('directory unavailable'))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+    expect(await screen.findByLabelText('User ID')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'User' })).not.toBeInTheDocument()
+  })
+
   it('caps a large owner directory and narrows it by search', async () => {
     getUsersMock.mockResolvedValue({
       data: {
@@ -1254,7 +1295,9 @@ describe('ServersTab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
-    fireEvent.click(await screen.findByRole('combobox', { name: 'User' }))
+    const user = await screen.findByRole('combobox', { name: 'User' })
+    await waitFor(() => expect(user).toBeEnabled())
+    fireEvent.click(user)
 
     expect(await screen.findAllByRole('option')).toHaveLength(50)
     expect(screen.getByText('Showing 50 of 120. Type to narrow.')).toBeInTheDocument()

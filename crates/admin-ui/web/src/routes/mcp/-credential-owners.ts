@@ -13,13 +13,17 @@ export interface CredentialServiceAccountOption extends CredentialOwnerOption {
 }
 
 /**
- * The principals a platform admin can bind a credential to, named rather than by ID. A list is
- * null until it loads, or when its read fails; that owner then takes a typed ID.
+ * One owner list: `loading` while its read is in flight (the picker waits, so nothing can be typed
+ * in the meantime), `failed` when the read failed (that owner then takes a typed ID), or the
+ * loaded options.
  */
+export type OwnerList<T> = T[] | 'loading' | 'failed'
+
+/** The principals a platform admin can bind a credential to, named rather than by ID. */
 export interface CredentialOwnerOptions {
-  users: CredentialOwnerOption[] | null
-  teams: CredentialOwnerOption[] | null
-  serviceAccounts: CredentialServiceAccountOption[] | null
+  users: OwnerList<CredentialOwnerOption>
+  teams: OwnerList<CredentialOwnerOption>
+  serviceAccounts: OwnerList<CredentialServiceAccountOption>
 }
 
 type OwnerScopeKind = 'user' | 'team' | 'service_account'
@@ -34,12 +38,13 @@ export function useCredentialOwnerOptions(
   scopeKind: OwnerScopeKind,
   teams: AdminTeamOption[],
 ): CredentialOwnerOptions | null {
-  const [users, setUsers] = useState<CredentialOwnerOption[] | null>(null)
-  const [serviceAccounts, setServiceAccounts] = useState<CredentialServiceAccountOption[] | null>(
-    null,
-  )
-  const needsUsers = enabled && scopeKind === 'user' && !users
-  const needsServiceAccounts = enabled && scopeKind === 'service_account' && !serviceAccounts
+  const [users, setUsers] = useState<OwnerList<CredentialOwnerOption>>('loading')
+  const [serviceAccounts, setServiceAccounts] =
+    useState<OwnerList<CredentialServiceAccountOption>>('loading')
+  // Each list is read once: a loaded or failed list stays as it is.
+  const needsUsers = enabled && scopeKind === 'user' && users === 'loading'
+  const needsServiceAccounts =
+    enabled && scopeKind === 'service_account' && serviceAccounts === 'loading'
 
   useEffect(() => {
     if (!needsUsers) return
@@ -50,6 +55,7 @@ export function useCredentialOwnerOptions(
       })
       .catch(() => {
         // Typed IDs still work, so a failed directory read only loses the picker.
+        if (!cancelled) setUsers('failed')
       })
     return () => {
       cancelled = true
@@ -66,6 +72,7 @@ export function useCredentialOwnerOptions(
       })
       .catch(() => {
         // Typed IDs still work, so a failed directory read only loses the picker.
+        if (!cancelled) setServiceAccounts('failed')
       })
     return () => {
       cancelled = true
