@@ -1,0 +1,33 @@
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_7fbf0743ec3e57::t_2ad5647dfa7206 29
+crates/admin-ui/web/src/components/observability/agent-sessions/session-detail.tsx
+  s_7fbf0743ec3e57::t_6cac55258f057f 35-36
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7fbf0743ec3e57::t_2d0a64ea8add07 1210-1211
+crates/admin-ui/web/src/routes/mcp/-credentials.tsx
+  s_7fbf0743ec3e57::t_df3939cbb78545 60,72,91,109-110,118
+  s_7fbf0743ec3e57::t_9c20cbcebc6cf8 124
+crates/admin-ui/web/src/routes/mcp/-credential-owners.ts
+  s_7fbf0743ec3e57::t_9c20cbcebc6cf8 64-65,89-90
+  s_7fbf0743ec3e57::t_df3939cbb78545 4,15-18,20-22,25-26,28-30,32-57,60,62-63,68,73-84,86-88,91-107
+crates/admin-ui/web/src/components/observability/agent-sessions/session-state-badge.tsx
+  s_7fbf0743ec3e57::t_a00509d52989bc 1-21
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_7fbf0743ec3e57::t_df3939cbb78545 637-638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c2bf6790d38f6ce45eb78d73108d62a7d8a80f0",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
