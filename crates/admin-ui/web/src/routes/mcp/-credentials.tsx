@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -165,20 +165,12 @@ function OwnerPicker({
   onValueChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
   const selected = options.find((option) => option.id === value)
-  const matches = matchingOwners(options, search)
 
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (!next) setSearch('')
-        }}
-      >
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             id={id}
@@ -196,40 +188,60 @@ function OwnerPicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
-          <Command shouldFilter={false}>
-            <CommandInput
-              aria-label={`Search ${label.toLowerCase()}`}
-              placeholder="Search by name or email"
-              value={search}
-              onValueChange={setSearch}
-            />
-            <CommandList>
-              <CommandEmpty>No matches.</CommandEmpty>
-              <CommandGroup>
-                {matches.shown.map((option) => (
-                  <CommandItem
-                    key={option.id}
-                    value={option.id}
-                    onSelect={() => {
-                      onValueChange(option.id)
-                      setOpen(false)
-                      setSearch('')
-                    }}
-                  >
-                    {option.label}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-            {matches.total > matches.shown.length ? (
-              <p className="text-muted-foreground border-t px-3 py-2 text-xs">
-                Showing {matches.shown.length} of {formatCount(matches.total)}. Type to narrow.
-              </p>
-            ) : null}
-          </Command>
+          <OwnerSearchList
+            label={label}
+            options={options}
+            onSelect={(ownerId) => {
+              onValueChange(ownerId)
+              setOpen(false)
+            }}
+          />
         </PopoverContent>
       </Popover>
     </Field>
+  )
+}
+
+/**
+ * The open picker's search and results. It mounts only while the popover is open, so a closed
+ * picker never scans the directory, and the search clears each time it closes.
+ */
+function OwnerSearchList({
+  label,
+  options,
+  onSelect,
+}: {
+  label: string
+  options: CredentialOwnerOption[]
+  onSelect: (ownerId: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const matches = useMemo(() => matchingOwners(options, search), [options, search])
+
+  return (
+    <Command shouldFilter={false}>
+      <CommandInput
+        aria-label={`Search ${label.toLowerCase()}`}
+        placeholder="Search by name or email"
+        value={search}
+        onValueChange={setSearch}
+      />
+      <CommandList>
+        <CommandEmpty>No matches.</CommandEmpty>
+        <CommandGroup>
+          {matches.shown.map((option) => (
+            <CommandItem key={option.id} value={option.id} onSelect={() => onSelect(option.id)}>
+              {option.label}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+      {matches.total > matches.shown.length ? (
+        <p className="text-muted-foreground border-t px-3 py-2 text-xs">
+          Showing {matches.shown.length} of {formatCount(matches.total)}. Type to narrow.
+        </p>
+      ) : null}
+    </Command>
   )
 }
 

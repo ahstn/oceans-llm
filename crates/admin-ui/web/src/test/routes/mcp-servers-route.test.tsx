@@ -195,6 +195,17 @@ const teamAdminScope: McpWorkspaceScope = {
   readOnly: false,
 }
 
+// The scope Select returns focus to its trigger as it closes, which dismisses a popover opened in
+// the same tick. Wait for its list to go, then confirm the picked owner shows on the trigger.
+async function pickOwner(picker: string, option: string) {
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole('combobox', { name: picker }))
+  fireEvent.click(await screen.findByRole('option', { name: option }))
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: picker })).toHaveTextContent(option),
+  )
+}
+
 // Users and teams reach the credentials form from the `/mcp` loader's directory.
 const credentialScope: McpWorkspaceScope = {
   platformAdmin: true,
@@ -1256,8 +1267,7 @@ describe('ServersTab', () => {
     const [scopeSelect] = screen.getAllByRole('combobox')
     fireEvent.click(scopeSelect)
     fireEvent.click(await screen.findByRole('option', { name: 'Service account' }))
-    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    await pickOwner('Service account', 'CI bot (Team A)')
     fireEvent.change(screen.getByLabelText('Secret'), { target: { value: 'token-2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add binding' }))
 
@@ -1282,8 +1292,7 @@ describe('ServersTab', () => {
       fireEvent.click(await screen.findByRole('option', { name }))
     }
     await chooseScope('Service account')
-    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    await pickOwner('Service account', 'CI bot (Team A)')
     await chooseScope('Team shared')
     await chooseScope('Service account')
 
@@ -1293,8 +1302,7 @@ describe('ServersTab', () => {
     )
     // The pickers can't be `required`, so Add binding waits for the account.
     expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    await pickOwner('Service account', 'CI bot (Team A)')
     expect(screen.getByRole('button', { name: 'Add binding' })).toBeEnabled()
   })
 
