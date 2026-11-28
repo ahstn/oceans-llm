@@ -55,7 +55,6 @@ import type {
   RecommendedMcpServerView,
 } from '@/types/api'
 import {
-  CredentialBindingsPanel,
   DiscoveryStatusBadge,
   ServerFormDialog,
   ServerFormFields,
@@ -65,6 +64,8 @@ import {
   ServerStatusBadge,
   ServerToolsPanel,
 } from './-components'
+import { useCredentialOwnerOptions } from './-credential-owners'
+import { CredentialBindingsPanel } from './-credentials'
 import { platformMcpScope, type McpWorkspaceScope } from './-scope'
 import { ToolReviewsPanel } from './-tool-reviews'
 import {
@@ -399,9 +400,6 @@ export function ServersTab({
       return
     }
     const input = formToCredentialBindingInput(selectedServer.id, credentialForm)
-    if (!input) {
-      return
-    }
     startTransition(async () => {
       try {
         await saveMcpCredentialBinding({ data: input })
@@ -634,6 +632,9 @@ function ServerDetailDialog({
     section,
     scope.platformAdmin,
   )
+  const credentialOwners = useCredentialOwnerOptions(
+    scope.platformAdmin && visibleSection === 'credentials',
+  )
 
   return (
     <Dialog open={Boolean(server)} onOpenChange={onOpenChange}>
@@ -657,7 +658,8 @@ function ServerDetailDialog({
               onSectionChange={setSection}
             />
 
-            <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
+            {/* A fixed height, so switching sections never resizes and re-centres the dialog. */}
+            <main className="flex h-[min(720px,calc(100dvh-2rem))] min-w-0 flex-1 flex-col overflow-hidden">
               <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
                 <div className="flex items-start gap-3">
                   <div className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-full">
@@ -756,6 +758,7 @@ function ServerDetailDialog({
                     pending={actionPending || credentialBindingsPending}
                     error={credentialBindingsError}
                     teamScoped={!scope.platformAdmin}
+                    owners={credentialOwners}
                     onFormChange={onCredentialFormChange}
                     onSubmit={onCredentialSubmit}
                     onRevoke={onCredentialRevoke}

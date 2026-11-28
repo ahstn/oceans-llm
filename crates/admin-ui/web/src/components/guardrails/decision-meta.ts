@@ -58,6 +58,17 @@ export function formatLatency(micros: number) {
   return micros >= 1_000 ? `${(micros / 1_000).toFixed(1)} ms` : `${micros} µs`
 }
 
+/** `built_in` is the gateway's own evaluator; any other value names a configured one. */
+export function evaluatorLabel(evaluator: string) {
+  return evaluator === 'built_in' ? 'Built-in' : evaluator
+}
+
+/** What a failed evaluation does to the request: `fail_closed` reads `Fail closed`. */
+export function dispositionLabel(disposition: string) {
+  const words = disposition.replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function ruleLabel(decision: GuardrailDecisionView) {
   return [decision.pack_id, decision.rule_id].filter(Boolean).join(' / ') || '—'
 }

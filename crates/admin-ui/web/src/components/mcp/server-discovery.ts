@@ -36,6 +36,18 @@ export function endpointHost(server: Pick<McpServerView, 'server_url'>) {
 }
 
 /** A discovery refresh run from this page, before the reloaded server list catches up with it. */
+/** How the gateway authenticates to the server, in words: `No authentication`. */
+export function authLabel(mode: string) {
+  const labels: Record<string, string> = {
+    none: 'No authentication',
+    gateway_bearer_token: 'Gateway bearer token',
+    gateway_static_header: 'Gateway static credential',
+    oauth_obo: 'OAuth on-behalf-of',
+    user_passthrough: 'User passthrough',
+  }
+  return labels[mode] ?? mode.replaceAll('_', ' ')
+}
+
 export interface DiscoveryRefreshResult {
   /** The gateway's discovery status, or `request_failed` when the refresh request didn't complete. */
   status: string

@@ -7,6 +7,7 @@ import {
 } from '@/lib/format'
 import { callerPrimary, callerSecondary } from '@/lib/caller'
 import type { RequestLogView } from '@/types/api'
+import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
 
 export { callerPrimary, callerSecondary } from '@/lib/caller'
 
@@ -22,6 +23,12 @@ export function callerLabel(item: RequestLogView): string {
 export function formatOccurredAt(occurredAt: string) {
   // Seconds matter here: several requests often land within the same minute.
   return formatTimestamp(occurredAt, { seconds: true })
+}
+
+/** An attempt status in sentence case: `upstream_error` reads `Upstream error`. */
+export function attemptStatusLabel(status: string) {
+  const words = status.replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 export function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'outline' {
@@ -103,11 +110,12 @@ export function metadataBoolean(item: RequestLogView, key: string) {
 }
 
 /** Caller tags in display order: the three standard tags, then bespoke ones. */
-export function requestTagLabels(item: RequestLogView): string[] {
+export function requestTags(item: RequestLogView): EntityTag[] {
+  const { service, component, env, bespoke } = item.request_tags
   return [
-    item.request_tags.service ? `service:${item.request_tags.service}` : null,
-    item.request_tags.component ? `component:${item.request_tags.component}` : null,
-    item.request_tags.env ? `env:${item.request_tags.env}` : null,
-    ...item.request_tags.bespoke.map((tag) => `${tag.key}:${tag.value}`),
-  ].filter((value): value is string => value !== null)
+    service ? { key: 'service', value: service } : null,
+    component ? { key: 'component', value: component } : null,
+    env ? { key: 'env', value: env } : null,
+    ...bespoke.map((tag) => ({ key: tag.key, value: tag.value })),
+  ].filter((tag): tag is EntityTag => tag !== null)
 }

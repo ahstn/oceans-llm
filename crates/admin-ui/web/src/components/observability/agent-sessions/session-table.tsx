@@ -26,6 +26,7 @@ import {
   type SessionColumnId,
   type VisibleSessionColumns,
 } from './session-columns'
+import { StateBadge } from './session-detail'
 
 interface SessionColumnRenderer {
   /** Numeric columns are right-aligned (DESIGN.md "Numbers and time"); their cells match. */
@@ -364,14 +365,6 @@ function DataQuality({ session }: { session: AgentSessionSummaryView }) {
     <span className="text-muted-foreground">Complete</span>
   ) : (
     <Badge variant="outline">{session.limitations.length} data limits</Badge>
-  )
-}
-
-function StateBadge({ value }: { value: string }) {
-  return (
-    <Badge variant={value.toLowerCase() === 'failed' ? 'destructive' : 'outline'}>
-      {humanize(value)}
-    </Badge>
   )
 }
 

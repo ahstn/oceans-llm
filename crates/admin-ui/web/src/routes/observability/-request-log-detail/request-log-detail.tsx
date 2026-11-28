@@ -80,7 +80,7 @@ function LoadedDetail({
         <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
           <StatusBadge statusCode={log.status_code} />
           {operation ? <span className="text-subtle-foreground">{operation}</span> : null}
-          {metadataBoolean(log, 'stream') ? <Badge variant="outline">stream</Badge> : null}
+          {metadataBoolean(log, 'stream') ? <Badge variant="outline">Stream</Badge> : null}
           <span aria-hidden>·</span>
           <span className="whitespace-nowrap tabular-nums">
             {formatOccurredAt(log.occurred_at)}

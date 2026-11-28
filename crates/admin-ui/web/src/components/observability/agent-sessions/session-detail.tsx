@@ -523,10 +523,17 @@ export function DetailSkeleton() {
   )
 }
 
+const STATE_VARIANTS: Record<string, 'success' | 'warning' | 'destructive'> = {
+  succeeded: 'success',
+  partial: 'warning',
+  failed: 'destructive',
+}
+
+/** A session lifecycle or request outcome; only an outcome takes a status colour. */
 export function StateBadge({ value }: { value: string }) {
-  const normalized = value.toLowerCase()
-  const variant = normalized === 'failed' ? 'destructive' : 'outline'
-  return <Badge variant={variant}>{humanize(value)}</Badge>
+  return (
+    <Badge variant={STATE_VARIANTS[value.toLowerCase()] ?? 'secondary'}>{humanize(value)}</Badge>
+  )
 }
 
 // Requests in a session often land within the same minute, so their timestamps carry seconds.

@@ -1,10 +1,17 @@
-import { CancelCircleIcon, DatabaseSearchIcon, FileViewIcon } from '@hugeicons/core-free-icons'
+import type { ReactNode } from 'react'
+import {
+  ArrowRight01Icon,
+  CancelCircleIcon,
+  DatabaseSearchIcon,
+  FileViewIcon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import {
   Sheet,
@@ -229,7 +236,7 @@ function BatchSummary({ batch }: { batch: BatchView }) {
   return (
     <dl className="bg-muted/40 mt-4 grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
       <SummaryField label="Batch ID" value={batch.batch_id} mono />
-      <SummaryField label="Status" value={formatStatus(batch.status)} />
+      <SummaryField label="Status" value={<BatchStatusBadge status={batch.status} />} />
       <SummaryField label="Model" value={batch.model} />
       <SummaryField label="Provider" value={batch.provider} />
       <SummaryField label="Caller" value={callerLabel(batch)} />
@@ -294,12 +301,22 @@ function BatchResults({
               label={result.error === null ? 'Response' : 'Error'}
               value={result.error ?? result.response}
             />
-            <details className="group min-w-0">
-              <summary className="text-muted-foreground cursor-pointer text-sm font-medium">
-                Request payload
-              </summary>
-              <JsonBlock value={result.request} />
-            </details>
+            <Collapsible className="group/request min-w-0">
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit">
+                  <AppIcon
+                    icon={ArrowRight01Icon}
+                    aria-hidden
+                    data-icon="inline-start"
+                    className="transition-transform group-data-[state=open]/request:rotate-90"
+                  />
+                  Request payload
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2">
+                <JsonBlock value={result.request} />
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         </article>
       ))}
@@ -363,16 +380,18 @@ function SummaryField({
   className,
 }: {
   label: string
-  value: string
+  value: ReactNode
   mono?: boolean
   className?: string
 }) {
   return (
     <div className={cn('min-w-0', className)}>
-      <dt className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+      <dt className="text-muted-foreground tracking-label text-xs font-semibold uppercase">
         {label}
       </dt>
-      <dd className={`mt-1 truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+      <dd className={cn('mt-1 truncate whitespace-nowrap', mono && 'font-mono text-xs')}>
+        {value}
+      </dd>
     </div>
   )
 }

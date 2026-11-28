@@ -36,7 +36,22 @@ export type CredentialBindingFormState = {
   storage_mode: 'secret' | 'secret_ref'
   secret: string
   secret_ref: string
-  expires_at: string
+  expires_in: CredentialExpiry
+}
+
+/** How long a new credential stays valid, in days, or `never`. */
+export type CredentialExpiry = 'never' | '30' | '90' | '365'
+
+export const CREDENTIAL_EXPIRY_OPTIONS: { value: CredentialExpiry; label: string }[] = [
+  { value: 'never', label: 'Never' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+  { value: '365', label: '1 year' },
+]
+
+/** The moment a credential saved `now` expires, or null when it never does. */
+export function credentialExpiresAt(expiry: CredentialExpiry, now: Date = new Date()) {
+  return expiry === 'never' ? null : new Date(now.getTime() + Number(expiry) * 86_400_000)
 }
 
 /** Team admins register for their team, so their servers start team-only. */
@@ -68,7 +83,7 @@ export function emptyCredentialBindingForm(teamId?: string | null): CredentialBi
     storage_mode: 'secret',
     secret: '',
     secret_ref: '',
-    expires_at: '',
+    expires_in: 'never',
   }
 }
 
@@ -151,11 +166,7 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
 export function formToCredentialBindingInput(
   serverId: string,
   form: CredentialBindingFormState,
-): UpsertMcpCredentialBindingInput | null {
-  const expiresAt = optionalDateTime(form.expires_at)
-  if (expiresAt === undefined) {
-    return null
-  }
+): UpsertMcpCredentialBindingInput {
   return {
     server_id: serverId,
     owner_scope_kind: form.owner_scope_kind,
@@ -172,7 +183,7 @@ export function formToCredentialBindingInput(
     header_name: form.material_kind === 'static_header' ? requiredString(form.header_name) : null,
     secret: form.storage_mode === 'secret' ? requiredString(form.secret) : null,
     secret_ref: form.storage_mode === 'secret_ref' ? requiredString(form.secret_ref) : null,
-    expires_at: expiresAt,
+    expires_at: credentialExpiresAt(form.expires_in)?.toISOString() ?? null,
     metadata: {},
   }
 }
@@ -204,17 +215,4 @@ function optionalNumber(value: string) {
 function requiredString(value: string) {
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
-}
-
-function optionalDateTime(value: string): string | null | undefined {
-  const trimmed = value.trim()
-  if (trimmed.length === 0) {
-    return null
-  }
-  const date = new Date(trimmed)
-  if (Number.isNaN(date.getTime())) {
-    toast.error('Credential expiry is not a valid date')
-    return undefined
-  }
-  return date.toISOString()
 }

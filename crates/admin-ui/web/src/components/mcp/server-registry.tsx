@@ -3,7 +3,12 @@ import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@t
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
-import { discoveryLabel, endpointHost, needsAttention } from '@/components/mcp/server-discovery'
+import {
+  authLabel,
+  discoveryLabel,
+  endpointHost,
+  needsAttention,
+} from '@/components/mcp/server-discovery'
 import {
   DataGrid,
   DataGridContainer,
@@ -546,17 +551,6 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
       )}
     </div>
   )
-}
-
-function authLabel(mode: string) {
-  const labels: Record<string, string> = {
-    none: 'No authentication',
-    gateway_bearer_token: 'Gateway bearer token',
-    gateway_static_header: 'Gateway static credential',
-    oauth_obo: 'OAuth on-behalf-of',
-    user_passthrough: 'User passthrough',
-  }
-  return labels[mode] ?? mode.replaceAll('_', ' ')
 }
 
 function formatDiscoveryTime(value: string) {

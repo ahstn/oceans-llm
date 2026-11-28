@@ -766,7 +766,9 @@ describe('ModelsPage table content', () => {
     expect(within(dialog).getByRole('heading', { name: 'Benchmarks' })).toBeInTheDocument()
     expect(within(dialog).getByText('Artificial Analysis Intelligence Index')).toBeInTheDocument()
     expect(within(dialog).getByText('39')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Matched from upstream model · Updated/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('Matched from upstream model · Updated 24 Sep 2026'),
+    ).toBeInTheDocument()
     expect(
       within(dialog).getByRole('link', { name: 'google/gemini-2.0-flash on OpenRouter' }),
     ).toHaveAttribute('href', 'https://openrouter.ai/google/gemini-2.0-flash')

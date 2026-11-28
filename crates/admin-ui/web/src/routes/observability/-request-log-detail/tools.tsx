@@ -92,7 +92,7 @@ export function McpTokenOverhead({
     { label: 'Cache hits', value: formatCount(overhead.cache_hit_count) },
     { label: 'Cache misses', value: formatCount(overhead.cache_miss_count) },
     { label: 'Context window', value: formatCount(overhead.context_window_tokens) },
-    { label: 'Confidence', value: overhead.confidence },
+    { label: 'Confidence', value: sentenceCase(overhead.confidence) },
     { label: 'Estimator', value: overhead.estimator_source, mono: true },
   ]
 
@@ -132,4 +132,8 @@ export function McpTokenOverhead({
       </dl>
     </div>
   )
+}
+
+function sentenceCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }

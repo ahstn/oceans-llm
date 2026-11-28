@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatDuration } from '@/lib/format'
 import type { RequestAttemptView } from '@/types/api'
 
-import { attemptStatusBadgeVariant } from './format'
+import { attemptStatusBadgeVariant, attemptStatusLabel } from './format'
 
 /** Upstream provider attempts in order, with any recorded error detail beneath the table. */
 export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | null | undefined }) {
@@ -52,7 +52,7 @@ export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | n
                 <TableCell className="px-3">
                   <div className="flex items-center gap-2">
                     <Badge variant={attemptStatusBadgeVariant(attempt.status)}>
-                      {attempt.status}
+                      {attemptStatusLabel(attempt.status)}
                     </Badge>
                     {attempt.error_code ? (
                       <span className="text-muted-foreground font-mono text-xs">
@@ -68,12 +68,12 @@ export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | n
                 </TableCell>
                 <TableCell className="px-3">
                   <div className="flex gap-1 whitespace-nowrap">
-                    {attempt.retryable ? <Badge variant="outline">retryable</Badge> : null}
-                    {attempt.terminal ? <Badge variant="outline">terminal</Badge> : null}
+                    {attempt.retryable ? <Badge variant="outline">Retryable</Badge> : null}
+                    {attempt.terminal ? <Badge variant="outline">Terminal</Badge> : null}
                     {attempt.produced_final_response ? (
-                      <Badge variant="outline">final response</Badge>
+                      <Badge variant="outline">Final response</Badge>
                     ) : null}
-                    {attempt.stream ? <Badge variant="outline">stream</Badge> : null}
+                    {attempt.stream ? <Badge variant="outline">Stream</Badge> : null}
                   </div>
                 </TableCell>
               </TableRow>
@@ -88,12 +88,12 @@ export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | n
         >
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
             <span>Attempt #{attempt.attempt_number} error detail</span>
-            {attempt.error_detail_truncated ? <Badge variant="warning">truncated</Badge> : null}
+            {attempt.error_detail_truncated ? <Badge variant="warning">Truncated</Badge> : null}
           </div>
           <p className="text-subtle-foreground mt-1 font-mono text-xs break-words">
             {attempt.error_detail}
           </p>
-          <p className="text-muted-foreground mt-1 font-mono text-xs">route: {attempt.route_id}</p>
+          <p className="text-muted-foreground mt-1 font-mono text-xs">Route {attempt.route_id}</p>
         </div>
       ))}
     </div>

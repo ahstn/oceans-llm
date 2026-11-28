@@ -12,6 +12,9 @@ const navigateMock = vi.fn()
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
 const getMcpCredentialBindingsMock = vi.fn()
+const saveMcpCredentialBindingMock = vi.fn()
+const getUsersMock = vi.fn()
+const getServiceAccountsMock = vi.fn()
 const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
@@ -51,10 +54,12 @@ vi.mock('@/server/admin-data.functions', () => ({
   enableExternalMcpServer: (...args: unknown[]) => enableExternalMcpServerMock(...args),
   getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
+  getServiceAccounts: (...args: unknown[]) => getServiceAccountsMock(...args),
+  getUsers: (...args: unknown[]) => getUsersMock(...args),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
     refreshExternalMcpServerDiscoveryMock(...args),
   removeMcpCredentialBinding: vi.fn(),
-  saveMcpCredentialBinding: vi.fn(),
+  saveMcpCredentialBinding: (...args: unknown[]) => saveMcpCredentialBindingMock(...args),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
   transferExternalMcpServerOwnership: (...args: unknown[]) =>
     transferExternalMcpServerOwnershipMock(...args),
@@ -259,6 +264,34 @@ describe('ServersTab', () => {
 
     getMcpServerToolsMock.mockResolvedValue({ data: { items: [tool] } })
     getMcpCredentialBindingsMock.mockResolvedValue({ data: { items: [] } })
+    saveMcpCredentialBindingMock.mockReset()
+    saveMcpCredentialBindingMock.mockResolvedValue({ data: {} })
+    getUsersMock.mockReset()
+    getUsersMock.mockResolvedValue({
+      data: {
+        users: [
+          { id: 'user_ada', name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+          { id: 'user_old', name: 'Old User', email: 'old@example.test', status: 'disabled' },
+        ],
+        teams: [{ id: 'team_a', name: 'Team A' }],
+      },
+    })
+    getServiceAccountsMock.mockReset()
+    getServiceAccountsMock.mockResolvedValue({
+      data: {
+        service_accounts: [
+          {
+            id: 'sa_ci',
+            name: 'CI bot',
+            key: 'ci-bot',
+            status: 'active',
+            team_id: 'team_a',
+            team_name: 'Team A',
+          },
+        ],
+        teams: [],
+      },
+    })
     addMcpServerMock.mockResolvedValue({ data: { server } })
     saveMcpServerMock.mockResolvedValue({ data: { server } })
     disableExternalMcpServerMock.mockResolvedValue({
@@ -1134,6 +1167,82 @@ describe('ServersTab', () => {
     await waitFor(() => expect(registry.queryByText('GitHub')).not.toBeInTheDocument())
     expect(registry.getByText('Docs')).toBeInTheDocument()
     expect(screen.getByText('Showing 1 of 2 servers')).toBeInTheDocument()
+  })
+
+  it('formats the overview values instead of printing raw fields', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+
+    const detail = within(await screen.findByTestId('mcp-server-detail'))
+    expect(detail.getByText('Gateway bearer token')).toBeInTheDocument()
+    expect(detail.getByText('30.0 s')).toBeInTheDocument()
+    expect(detail.getAllByText('27 May 2026, 09:00 UTC')).toHaveLength(3)
+    expect(detail.getByText('27 May 2026, 08:00 UTC')).toBeInTheDocument()
+    expect(detail.queryByText(/2026-05-27T/)).not.toBeInTheDocument()
+    expect(detail.queryByText(/ms$/)).not.toBeInTheDocument()
+  })
+
+  it('binds a credential to a named owner with a preset expiry', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-28T12:00:00Z') })
+    try {
+      renderServersTab()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+
+      const user = await screen.findByRole('combobox', { name: 'User' })
+      expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
+      expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
+
+      fireEvent.click(user)
+      expect(screen.queryByRole('option', { name: /Old User/ })).not.toBeInTheDocument()
+      fireEvent.click(
+        await screen.findByRole('option', { name: 'Ada Lovelace (ada@example.test)' }),
+      )
+
+      expect(
+        screen.getByText('The credential stays valid until it is revoked.'),
+      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('radio', { name: '30 days' }))
+      expect(screen.getByText('Expires 28 Dec 2026, 12:00 UTC.')).toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('Secret'), { target: { value: 'token-1' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add binding' }))
+
+      await waitFor(() => expect(saveMcpCredentialBindingMock).toHaveBeenCalledTimes(1))
+      expect(saveMcpCredentialBindingMock.mock.calls[0][0].data).toMatchObject({
+        owner_scope_kind: 'user',
+        owner_user_id: 'user_ada',
+        expires_at: '2026-12-28T12:00:00.000Z',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('fills the team from a picked service account', async () => {
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByRole('combobox', { name: 'User' })
+
+    const [scopeSelect] = screen.getAllByRole('combobox')
+    fireEvent.click(scopeSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Service account' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    fireEvent.change(screen.getByLabelText('Secret'), { target: { value: 'token-2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add binding' }))
+
+    await waitFor(() => expect(saveMcpCredentialBindingMock).toHaveBeenCalledTimes(1))
+    expect(saveMcpCredentialBindingMock.mock.calls[0][0].data).toMatchObject({
+      owner_scope_kind: 'service_account',
+      owner_service_account_id: 'sa_ci',
+      owner_team_id: 'team_a',
+      expires_at: null,
+    })
   })
 
   it('keeps servers a team admin does not manage read-only', async () => {

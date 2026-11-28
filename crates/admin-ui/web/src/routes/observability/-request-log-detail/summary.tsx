@@ -6,6 +6,7 @@ import { BrandIcon } from '@/components/icons/brand-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { EntityTagChip } from '@/routes/identity/-entity-tags'
 import { EMPTY_VALUE, formatCount, formatDuration } from '@/lib/format'
 import { serviceTierLabel } from '@/lib/service-tier'
 import { cn } from '@/lib/utils'
@@ -19,7 +20,7 @@ import {
   formatRequestCost,
   metadataBoolean,
   operationLabel,
-  requestTagLabels,
+  requestTags,
   statusCodeBadgeVariant,
 } from './format'
 
@@ -320,18 +321,17 @@ function ServiceTierFact({ log }: { log: RequestLogView }) {
 }
 
 function TagList({ log }: { log: RequestLogView }) {
-  const tags = requestTagLabels(log)
+  const tags = requestTags(log)
 
   if (tags.length === 0) {
-    return <span className="text-muted-foreground text-sm">No caller tags</span>
+    return <span className="text-muted-foreground text-sm">{EMPTY_VALUE}</span>
   }
 
+  // The sheet has room for every tag, so they wrap rather than fold into a `+N` chip.
   return (
     <div className="flex min-w-0 flex-wrap gap-1.5 py-0.5">
       {tags.map((tag) => (
-        <Badge key={tag} variant="outline" className="max-w-full font-mono">
-          <span className="truncate">{tag}</span>
-        </Badge>
+        <EntityTagChip key={`${tag.key}:${tag.value}`} tag={tag} />
       ))}
     </div>
   )
