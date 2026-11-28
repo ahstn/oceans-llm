@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7fbf0743ec3e57::t_1efcdd1dddf2b3 1282-1299
+crates/admin-ui/web/src/routes/mcp/-server-forms.ts
+  s_7fbf0743ec3e57::t_1efcdd1dddf2b3 170-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c07baeee1b4180b26cb87fc6c80a43056690b4ca",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
