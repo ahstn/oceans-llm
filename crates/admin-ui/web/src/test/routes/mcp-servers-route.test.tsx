@@ -1279,6 +1279,24 @@ describe('ServersTab', () => {
     expect(screen.queryByRole('combobox', { name: 'User' })).not.toBeInTheDocument()
   })
 
+  it('needs both typed IDs for a service account when the directory read fails', async () => {
+    getUsersMock.mockRejectedValue(new Error('directory unavailable'))
+    getServiceAccountsMock.mockRejectedValue(new Error('directory unavailable'))
+    renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Credentials' }))[0])
+    await screen.findByLabelText('User ID')
+    fireEvent.click(screen.getAllByRole('combobox')[0])
+    fireEvent.click(await screen.findByRole('option', { name: 'Service account' }))
+
+    const accountId = await screen.findByLabelText('Service account ID')
+    fireEvent.change(accountId, { target: { value: 'sa_ci' } })
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Team ID'), { target: { value: 'team_a' } })
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeEnabled()
+  })
+
   it('caps a large owner directory and narrows it by search', async () => {
     getUsersMock.mockResolvedValue({
       data: {
