@@ -26,7 +26,7 @@ import {
   type SessionColumnId,
   type VisibleSessionColumns,
 } from './session-columns'
-import { StateBadge } from './session-detail'
+import { StateBadge } from './session-state-badge'
 
 interface SessionColumnRenderer {
   /** Numeric columns are right-aligned (DESIGN.md "Numbers and time"); their cells match. */

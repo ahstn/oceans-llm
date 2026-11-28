@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getServiceAccounts, getUsers } from '@/server/admin-data.functions'
+import type { AdminTeamOption } from '@/types/api'
 
 export interface CredentialOwnerOption {
   id: string
@@ -11,56 +12,98 @@ export interface CredentialServiceAccountOption extends CredentialOwnerOption {
   teamId: string
 }
 
-/** The principals a platform admin can bind a credential to, named rather than by ID. */
+/**
+ * The principals a platform admin can bind a credential to, named rather than by ID. A list is
+ * null until it loads, or when its read fails; that owner then takes a typed ID.
+ */
 export interface CredentialOwnerOptions {
-  users: CredentialOwnerOption[]
-  teams: CredentialOwnerOption[]
-  serviceAccounts: CredentialServiceAccountOption[]
+  users: CredentialOwnerOption[] | null
+  teams: CredentialOwnerOption[] | null
+  serviceAccounts: CredentialServiceAccountOption[] | null
 }
 
+type OwnerScopeKind = 'user' | 'team' | 'service_account'
+
 /**
- * Loads credential owners once `enabled` turns on, so the directory is read only when a platform
- * admin opens Credentials. Returns null until it loads or when it fails; the form then falls back
- * to typed IDs.
+ * Names credential owners for the scope the form has chosen, once `enabled` turns on. Each list
+ * loads the first time its scope is picked: users for a user binding, service accounts for a
+ * service account binding. Teams come from the page's directory, so they need no read.
  */
-export function useCredentialOwnerOptions(enabled: boolean) {
-  const [options, setOptions] = useState<CredentialOwnerOptions | null>(null)
+export function useCredentialOwnerOptions(
+  enabled: boolean,
+  scopeKind: OwnerScopeKind,
+  teams: AdminTeamOption[],
+): CredentialOwnerOptions | null {
+  const [users, setUsers] = useState<CredentialOwnerOption[] | null>(null)
+  const [serviceAccounts, setServiceAccounts] = useState<CredentialServiceAccountOption[] | null>(
+    null,
+  )
+  const needsUsers = enabled && scopeKind === 'user' && !users
+  const needsServiceAccounts = enabled && scopeKind === 'service_account' && !serviceAccounts
 
   useEffect(() => {
-    if (!enabled || options) return
+    if (!needsUsers) return
     let cancelled = false
-    void Promise.all([getUsers(), getServiceAccounts()])
-      .then(([users, accounts]) => {
-        if (cancelled) return
-        const activeUsers: CredentialOwnerOption[] = []
-        for (const user of users.data.users) {
-          if (user.status === 'active') {
-            activeUsers.push({ id: user.id, label: `${user.name} (${user.email})` })
-          }
-        }
-        const activeAccounts: CredentialServiceAccountOption[] = []
-        for (const account of accounts.data.service_accounts) {
-          if (account.status === 'active') {
-            activeAccounts.push({
-              id: account.id,
-              label: `${account.name} (${account.team_name})`,
-              teamId: account.team_id,
-            })
-          }
-        }
-        setOptions({
-          users: activeUsers,
-          teams: users.data.teams.map((team) => ({ id: team.id, label: team.name })),
-          serviceAccounts: activeAccounts,
-        })
+    void getUsers()
+      .then((response) => {
+        if (!cancelled) setUsers(activeUserOptions(response.data.users))
       })
       .catch(() => {
-        // Typed IDs still work, so a failed directory read only loses the pickers.
+        // Typed IDs still work, so a failed directory read only loses the picker.
       })
     return () => {
       cancelled = true
     }
-  }, [enabled, options])
+  }, [needsUsers])
 
+  useEffect(() => {
+    if (!needsServiceAccounts) return
+    let cancelled = false
+    void getServiceAccounts()
+      .then((response) => {
+        if (!cancelled)
+          setServiceAccounts(activeServiceAccountOptions(response.data.service_accounts))
+      })
+      .catch(() => {
+        // Typed IDs still work, so a failed directory read only loses the picker.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [needsServiceAccounts])
+
+  if (!enabled) return null
+  return {
+    users,
+    teams: teams.map((team) => ({ id: team.id, label: team.name })),
+    serviceAccounts,
+  }
+}
+
+type UsersResponse = Awaited<ReturnType<typeof getUsers>>
+type ServiceAccountsResponse = Awaited<ReturnType<typeof getServiceAccounts>>
+
+function activeUserOptions(users: UsersResponse['data']['users']) {
+  const options: CredentialOwnerOption[] = []
+  for (const user of users) {
+    if (user.status === 'active')
+      options.push({ id: user.id, label: `${user.name} (${user.email})` })
+  }
+  return options
+}
+
+function activeServiceAccountOptions(
+  accounts: ServiceAccountsResponse['data']['service_accounts'],
+) {
+  const options: CredentialServiceAccountOption[] = []
+  for (const account of accounts) {
+    if (account.status === 'active') {
+      options.push({
+        id: account.id,
+        label: `${account.name} (${account.team_name})`,
+        teamId: account.team_id,
+      })
+    }
+  }
   return options
 }

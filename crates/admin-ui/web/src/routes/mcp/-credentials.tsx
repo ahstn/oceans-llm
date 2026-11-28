@@ -57,7 +57,7 @@ const CREDENTIAL_STORAGE_LABELS: Record<string, string> = {
   secret_ref: 'Secret reference',
 }
 
-// Platform admins pick owners by name once the directory loads; team admins, and anyone whose
+// Platform admins pick owners by name once that owner's list loads; team admins, and anyone whose
 // directory read failed, type the ID instead.
 function CredentialOwnerField({
   form,
@@ -69,7 +69,7 @@ function CredentialOwnerField({
   onFormChange: (form: CredentialBindingFormState) => void
 }) {
   if (form.owner_scope_kind === 'user') {
-    return owners ? (
+    return owners?.users ? (
       <OwnerPicker
         id="mcp-credential-owner-user"
         label="User"
@@ -88,7 +88,7 @@ function CredentialOwnerField({
     )
   }
   if (form.owner_scope_kind === 'team') {
-    return owners ? (
+    return owners?.teams ? (
       <OwnerPicker
         id="mcp-credential-owner-team"
         label="Team"
@@ -106,7 +106,8 @@ function CredentialOwnerField({
       />
     )
   }
-  if (owners) {
+  const serviceAccounts = owners?.serviceAccounts
+  if (serviceAccounts) {
     // A service account belongs to one team, so picking it fills the team too.
     return (
       <OwnerPicker
@@ -114,14 +115,13 @@ function CredentialOwnerField({
         label="Service account"
         placeholder="Choose a service account"
         value={form.owner_service_account_id}
-        options={owners.serviceAccounts}
+        options={serviceAccounts}
         onValueChange={(value) =>
           onFormChange({
             ...form,
             owner_service_account_id: value,
             owner_team_id:
-              owners.serviceAccounts.find((account) => account.id === value)?.teamId ??
-              form.owner_team_id,
+              serviceAccounts.find((account) => account.id === value)?.teamId ?? form.owner_team_id,
           })
         }
       />

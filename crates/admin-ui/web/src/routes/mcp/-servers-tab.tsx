@@ -634,6 +634,8 @@ function ServerDetailDialog({
   )
   const credentialOwners = useCredentialOwnerOptions(
     scope.platformAdmin && visibleSection === 'credentials',
+    credentialForm.owner_scope_kind,
+    scope.teams,
   )
 
   return (

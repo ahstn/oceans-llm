@@ -1207,6 +1207,8 @@ describe('ServersTab', () => {
 
       const user = await screen.findByRole('combobox', { name: 'User' })
       expect(getUsersMock).toHaveBeenCalledTimes(1)
+      // Each owner list loads only for its scope, so a user binding never reads service accounts.
+      expect(getServiceAccountsMock).not.toHaveBeenCalled()
       expect(screen.queryByLabelText('User ID')).not.toBeInTheDocument()
       expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
 
