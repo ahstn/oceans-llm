@@ -231,6 +231,19 @@ describe('BatchesPage', () => {
     expect(payload).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('shows a result still waiting on the provider as pending, not failed', async () => {
+    getBatchResultPageMock.mockResolvedValue({
+      ...completedDetail,
+      items: [{ ...completedDetail.items[0], status: 'pending', response: null }],
+    })
+
+    render(<BatchesPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0])
+
+    const sheet = await screen.findByRole('dialog')
+    expect(await within(sheet).findByText('Pending')).toHaveAttribute('data-variant', 'warning')
+  })
+
   it('loads later result pages from the gateway', async () => {
     getBatchResultPageMock
       .mockResolvedValueOnce({ ...completedDetail, page_size: 100, total: 201 })

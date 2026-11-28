@@ -292,7 +292,7 @@ function BatchResults({
         <article key={result.custom_id} className="min-w-0 overflow-hidden rounded-lg border">
           <div className="bg-muted/50 flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
             <span className="font-mono text-sm font-semibold">{result.custom_id}</span>
-            <Badge variant={result.status === 'succeeded' ? 'success' : 'destructive'}>
+            <Badge variant={resultStatusVariant(result.status)}>
               {formatStatus(result.status)}
             </Badge>
           </div>
@@ -360,6 +360,13 @@ function JsonBlock({ label, value }: { label?: string; value: unknown }) {
       </pre>
     </div>
   )
+}
+
+// A result still waiting on the provider is pending, not failed.
+function resultStatusVariant(status: string): 'success' | 'warning' | 'destructive' {
+  if (status === 'succeeded') return 'success'
+  if (status === 'pending') return 'warning'
+  return 'destructive'
 }
 
 function BatchDetailSkeleton() {
