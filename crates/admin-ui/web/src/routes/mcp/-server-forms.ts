@@ -163,6 +163,13 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
   }
 }
 
+/** Whether the form names the owner its scope needs; the owner pickers can't be `required`. */
+export function credentialOwnerChosen(form: CredentialBindingFormState) {
+  if (form.owner_scope_kind === 'user') return form.owner_user_id.trim() !== ''
+  if (form.owner_scope_kind === 'team') return form.owner_team_id.trim() !== ''
+  return form.owner_service_account_id.trim() !== ''
+}
+
 export function formToCredentialBindingInput(
   serverId: string,
   form: CredentialBindingFormState,

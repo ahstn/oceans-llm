@@ -36,6 +36,7 @@ import type { CredentialOwnerOption, CredentialOwnerOptions } from './-credentia
 import {
   CREDENTIAL_EXPIRY_OPTIONS,
   credentialExpiresAt,
+  credentialOwnerChosen,
   type CredentialBindingFormState,
 } from './-server-forms'
 
@@ -381,7 +382,7 @@ function CredentialBindingForm({
         <CredentialExpiryField form={form} onFormChange={onFormChange} />
       </FieldGroup>
       <div className="flex justify-end">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !credentialOwnerChosen(form)}>
           {pending ? 'Saving...' : 'Add binding'}
         </Button>
       </div>

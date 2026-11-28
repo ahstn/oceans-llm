@@ -1291,6 +1291,11 @@ describe('ServersTab', () => {
     expect(screen.getByRole('combobox', { name: 'Service account' })).toHaveTextContent(
       'Choose a service account',
     )
+    // The pickers can't be `required`, so Add binding waits for the account.
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Service account' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'CI bot (Team A)' }))
+    expect(screen.getByRole('button', { name: 'Add binding' })).toBeEnabled()
   })
 
   it('labels credential bindings and pins Revoke to the table edge', async () => {
