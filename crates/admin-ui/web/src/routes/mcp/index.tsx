@@ -13,7 +13,6 @@ import {
 } from '@/server/admin-data.functions'
 import type { AdminTeamOption, ApiKeyOwnerUserView, AuthSessionView } from '@/types/api'
 import { getMcpTagRules } from '@/server/mcp-policy-data.functions'
-import { toCredentialUserOptions, type CredentialOwnerOption } from './-credential-owners'
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
 import { McpHeader } from './-navigation'
@@ -53,7 +52,6 @@ export const Route = createFileRoute('/mcp/')({
         users: [],
         serviceAccounts: [],
         teams: [],
-        credentialUsers: [],
       }
     }
     const [servers, recommended, toolsets, grants, tagRules, apiKeys, directory] =
@@ -81,7 +79,6 @@ export const Route = createFileRoute('/mcp/')({
       users: directory.users ?? apiKeys.data.users,
       serviceAccounts: apiKeys.data.service_accounts,
       teams: directory.teams,
-      credentialUsers: directory.credentialUsers ?? [],
     }
   },
   component: McpWorkspacePage,
@@ -98,7 +95,6 @@ export function McpWorkspacePage() {
     canPublish: data.canPublish,
     teamId: data.teamId,
     teams: data.platformAdmin ? data.teams : [],
-    users: data.platformAdmin ? data.credentialUsers : [],
     readOnly: data.readOnly,
   }
   // Access rules are for admins.
@@ -196,15 +192,10 @@ type McpSubjectDirectory = {
   teams: AdminTeamOption[]
   /** `undefined` falls back to the owners the API keys payload lists. */
   users?: ApiKeyOwnerUserView[]
-  /** Platform admins name credential owners from the same directory. */
-  credentialUsers?: CredentialOwnerOption[]
 }
 
 function toPlatformDirectory(identity: Awaited<ReturnType<typeof getUsers>>): McpSubjectDirectory {
-  return {
-    teams: identity.data.teams,
-    credentialUsers: toCredentialUserOptions(identity.data.users),
-  }
+  return { teams: identity.data.teams }
 }
 
 /** A team admin grants only to their own team and its members. */

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { getServiceAccounts } from '@/server/admin-data.functions'
-import type { AdminTeamOption } from '@/types/api'
-import type { UserView } from '@/types/live-api'
+import { getServiceAccounts, getUsers } from '@/server/admin-data.functions'
 
 export interface CredentialOwnerOption {
   id: string
@@ -20,48 +18,41 @@ export interface CredentialOwnerOptions {
   serviceAccounts: CredentialServiceAccountOption[]
 }
 
-/** Active users, labelled for the owner picker. The `/mcp` loader builds these from its directory. */
-export function toCredentialUserOptions(users: UserView[]): CredentialOwnerOption[] {
-  const options: CredentialOwnerOption[] = []
-  for (const user of users) {
-    if (user.status === 'active') {
-      options.push({ id: user.id, label: `${user.name} (${user.email})` })
-    }
-  }
-  return options
-}
-
 /**
- * Names the credential owners once `enabled` turns on. Users and teams come from the page's
- * directory; only service accounts are fetched, when a platform admin opens Credentials. Returns
- * null until they load or when the fetch fails; the form then falls back to typed IDs.
+ * Loads credential owners once `enabled` turns on, so the directory is read only when a platform
+ * admin opens Credentials. Returns null until it loads or when it fails; the form then falls back
+ * to typed IDs.
  */
-export function useCredentialOwnerOptions(
-  enabled: boolean,
-  users: CredentialOwnerOption[] | undefined,
-  teams: AdminTeamOption[],
-) {
-  const [serviceAccounts, setServiceAccounts] = useState<CredentialServiceAccountOption[] | null>(
-    null,
-  )
+export function useCredentialOwnerOptions(enabled: boolean) {
+  const [options, setOptions] = useState<CredentialOwnerOptions | null>(null)
 
   useEffect(() => {
-    if (!enabled || serviceAccounts) return
+    if (!enabled || options) return
     let cancelled = false
-    void getServiceAccounts()
-      .then((accounts) => {
+    void Promise.all([getUsers(), getServiceAccounts()])
+      .then(([users, accounts]) => {
         if (cancelled) return
-        const active: CredentialServiceAccountOption[] = []
+        const activeUsers: CredentialOwnerOption[] = []
+        for (const user of users.data.users) {
+          if (user.status === 'active') {
+            activeUsers.push({ id: user.id, label: `${user.name} (${user.email})` })
+          }
+        }
+        const activeAccounts: CredentialServiceAccountOption[] = []
         for (const account of accounts.data.service_accounts) {
           if (account.status === 'active') {
-            active.push({
+            activeAccounts.push({
               id: account.id,
               label: `${account.name} (${account.team_name})`,
               teamId: account.team_id,
             })
           }
         }
-        setServiceAccounts(active)
+        setOptions({
+          users: activeUsers,
+          teams: users.data.teams.map((team) => ({ id: team.id, label: team.name })),
+          serviceAccounts: activeAccounts,
+        })
       })
       .catch(() => {
         // Typed IDs still work, so a failed directory read only loses the pickers.
@@ -69,12 +60,7 @@ export function useCredentialOwnerOptions(
     return () => {
       cancelled = true
     }
-  }, [enabled, serviceAccounts])
+  }, [enabled, options])
 
-  if (!serviceAccounts) return null
-  return {
-    users: users ?? [],
-    teams: teams.map((team) => ({ id: team.id, label: team.name })),
-    serviceAccounts,
-  } satisfies CredentialOwnerOptions
+  return options
 }
